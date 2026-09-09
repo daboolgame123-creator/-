@@ -20,7 +20,11 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     entity: 'الأمانة العامة / الدائرة الإدارية',
     subject: 'إيفاد منتسبين بمهمة عمل رسمية مع تخصيص عجلة المركز',
     employeeName: 'سجاد حيدر عبد الحسين (اسم تجريبي)',
+    priority: 'عادي',
     status: 'قيد الإنجاز',
+    isRead: true,
+    createdAt: '2026-08-14 08:30 ص',
+    readAt: '2026-08-14 09:15 ص',
     notes: 'بانتظار عودة الموفدين لتقديم تقرير الإيفاد والمباشرة.',
     specificDetails: {
       destination: 'محافظة البصرة',
@@ -58,7 +62,16 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     entity: 'قسم الذاتية',
     subject: 'طلب منح إجازة اعتيادية لمدة 4 أيام لظرف عائلي',
     employeeName: 'أحمد جاسم كريم (اسم تجريبي)',
+    priority: 'عادي',
+    directorDirective: {
+      text: 'موافق، تُمنح الإجازة وتُحتسب أصولياً من رصيده.',
+      date: '2026-08-16 10:15 ص',
+      actionRequired: false,
+    },
     status: 'مكتمل',
+    isRead: true,
+    createdAt: '2026-08-16 09:10 ص',
+    readAt: '2026-08-16 10:05 ص',
     notes: 'تمت موافقة السيد المدير، واحتساب الرصيد وتثبيته في سجل الإجازات.',
     specificDetails: {
       leaveDays: 4,
@@ -86,7 +99,10 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     subType: 'تعميم إداري',
     entity: 'الأمانة العامة / مكتب الأمين العام',
     subject: 'تعميم بخصوص ضوابط الدوام الصيفي والتوقيع في سجل الحضور',
+    priority: 'عاجل جداً',
     status: 'جديد',
+    isRead: false,
+    createdAt: '2026-08-18 10:45 ص',
     notes: 'يلزم تعميم الكتاب وعرضه على المنتسبين لأخذ توقيعات الاطلاع.',
     attachments: [
       {
@@ -119,7 +135,15 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     entity: 'القسم المالي والحسابات',
     subject: 'مذكرة صرف مستحقات أجور صيانة ومواد مشتراة لقسم المخزن',
     employeeName: 'علي رضا عبد الزهرة (اسم تجريبي)',
+    priority: 'هام',
+    directorDirective: {
+      text: 'يُحال إلى الحسابات لتدقيق الوصولات وإجراء الصرف أصولياً.',
+      date: '2026-08-20 11:40 ص',
+      actionRequired: true,
+    },
     status: 'قيد الإنجاز',
+    isRead: false,
+    createdAt: '2026-08-20 11:15 ص',
     notes: 'تم تدقيق الفواتير المرفقة وبانتظار مصادقة الحسابات على الصك.',
     specificDetails: {
       amount: '٣٤٠,٠٠٠ دينار (وهمي)',
@@ -148,7 +172,11 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [
     entity: 'إدارة المركز',
     subject: 'تكليف بمهمة متابعة تدقيق جرد سجلات الذاتية والتوثيق الورقي',
     employeeName: 'محمد باقر ناصر (اسم تجريبي)',
+    priority: 'سري',
     status: 'مكتمل',
+    isRead: true,
+    createdAt: '2026-08-22 01:20 م',
+    readAt: '2026-08-22 02:00 م',
     notes: 'أُنجزت المهمة وسُلم التقرير النهائي للمدير.',
     attachments: [
       {

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, Plus, Paperclip, Check, UploadCloud } from 'lucide-react';
-import { Transaction, TransactionDirection, TransactionCategory, TransactionStatus, Attachment } from '../types';
+import { X, Plus, Paperclip, Check, UploadCloud, Trash2, Image as ImageIcon, Camera } from 'lucide-react';
+import { Transaction, TransactionDirection, TransactionCategory, TransactionStatus, TransactionPriority, Attachment, AttachmentType } from '../types';
+import { processUploadedFile } from '../utils/attachmentUtils';
 
 interface NewTransactionModalProps {
   isOpen: boolean;
@@ -29,6 +30,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
   const [entity, setEntity] = useState('');
   const [subject, setSubject] = useState('');
   const [employeeName, setEmployeeName] = useState('');
+  const [priority, setPriority] = useState<TransactionPriority>('عادي');
   const [status, setStatus] = useState<TransactionStatus>('جديد');
   const [notes, setNotes] = useState('');
 
@@ -59,12 +61,63 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
     ]);
   };
 
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    setIsUploading(true);
+    try {
+      const files: File[] = Array.from(e.target.files);
+      const newAtts: Attachment[] = [];
+
+      for (let idx = 0; idx < files.length; idx++) {
+        const file = files[idx];
+        const processed = await processUploadedFile(file);
+        const defaultType: AttachmentType = 
+          attachments.length === 0 && idx === 0 ? 'كتاب رئيسي' : 'صورة وثيقة';
+
+        newAtts.push({
+          id: `att-file-${Date.now()}-${idx}`,
+          name: file.name,
+          type: defaultType,
+          fileSize: processed.fileSizeStr,
+          uploadDate: today,
+          isImage: processed.isImage,
+          previewUrl: processed.dataUrl,
+        });
+      }
+      setAttachments((prev) => [...prev, ...newAtts]);
+    } catch (err) {
+      console.error('Error uploading file:', err);
+    } finally {
+      setIsUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleRemoveAttachment = (idToRemove: string) => {
+    setAttachments((prev) => prev.filter((a) => a.id !== idToRemove));
+  };
+
+  const handleChangeAttachmentType = (id: string, newType: string) => {
+    setAttachments((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, type: newType } : a))
+    );
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!number.trim() || !subject.trim() || !entity.trim()) {
       alert('يرجى ملء الحقول الأساسية: العدد، الجهة، والمضمون');
       return;
     }
+
+    const now = new Date();
+    const formattedTime = new Intl.DateTimeFormat('ar-IQ', {
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(now);
+    const fullCreatedAt = `${date} (${formattedTime})`;
 
     const newTr: Transaction = {
       id: `tr-${Date.now()}`,
@@ -78,7 +131,10 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
       entity: entity.trim(),
       subject: subject.trim(),
       employeeName: employeeName.trim() || undefined,
+      priority,
       status,
+      isRead: false, // Automatically unread for the Director!
+      createdAt: fullCreatedAt,
       notes: notes.trim() || undefined,
       attachments,
     };
@@ -263,8 +319,32 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
             />
           </div>
 
-          {/* Status & Notes */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Priority, Status & Notes */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">
+                درجة الأسبقية
+              </label>
+              <select
+                value={priority}
+                onChange={(e) => setPriority(e.target.value as TransactionPriority)}
+                className={`w-full px-3 py-2 rounded-lg border text-xs font-bold outline-hidden transition-colors ${
+                  priority === 'عاجل جداً'
+                    ? 'border-rose-500 bg-rose-50 text-rose-700'
+                    : priority === 'هام'
+                    ? 'border-amber-500 bg-amber-50 text-amber-800'
+                    : priority === 'سري'
+                    ? 'border-purple-500 bg-purple-50 text-purple-800'
+                    : 'border-stone-300 bg-white text-stone-800'
+                }`}
+              >
+                <option value="عادي">عادي</option>
+                <option value="هام">هام ⚠️</option>
+                <option value="عاجل جداً">عاجل جداً 🚨</option>
+                <option value="سري">سري وخاص 🔒</option>
+              </select>
+            </div>
+
             <div>
               <label className="block text-xs font-semibold text-stone-700 mb-1">
                 الحالة المبدئية
@@ -282,7 +362,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
 
             <div className="sm:col-span-2">
               <label className="block text-xs font-semibold text-stone-700 mb-1">
-                ملاحظات
+                ملاحظات إدارية
               </label>
               <input
                 type="text"
@@ -294,36 +374,96 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
             </div>
           </div>
 
-          {/* Scanned Attachments Simulator */}
-          <div className="p-3 rounded-xl border border-stone-200 bg-stone-50 space-y-2">
-            <div className="flex items-center justify-between">
+          {/* Scanned Attachments & Upload Section */}
+          <div className="p-3 rounded-xl border border-stone-200 bg-stone-50 space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-bold text-stone-700 flex items-center gap-1.5">
                 <Paperclip className="w-3.5 h-3.5 text-stone-500" />
-                المرفقات الممسوحة ضوئياً ({attachments.length})
+                المرفقات والكتب المرفوعة ({attachments.length})
               </span>
-              <button
-                type="button"
-                onClick={addExtraAttachment}
-                className="text-xs text-amber-700 hover:text-amber-800 font-semibold flex items-center gap-1 cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" /> إضافة مرفق آخر (قائمة أسماء/ملحق)
-              </button>
+
+              <div className="flex items-center gap-2">
+                <label className="text-xs bg-stone-900 hover:bg-stone-800 text-white font-semibold px-2.5 py-1 rounded-md flex items-center gap-1 cursor-pointer transition-colors shadow-2xs">
+                  <UploadCloud className="w-3.5 h-3.5" />
+                  <span>رفع ملف (صورة / PDF)</span>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*,.pdf"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={addExtraAttachment}
+                  className="text-xs text-amber-800 hover:text-amber-900 bg-amber-100/80 hover:bg-amber-100 px-2 py-1 rounded-md font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  <Plus className="w-3 h-3" /> ملحق تجريبي
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-1.5">
-              {attachments.map((att, i) => (
-                <div key={att.id} className="flex items-center justify-between p-2 rounded-lg bg-white border border-stone-200 text-xs">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                    <span className="font-semibold text-stone-800">{att.name}</span>
-                    <span className="text-stone-400">({att.type})</span>
+            {/* Processing state */}
+            {isUploading && (
+              <div className="p-2 bg-amber-50 rounded border border-amber-200 text-amber-900 text-xs flex items-center justify-center gap-1.5">
+                <span className="animate-spin">⌛</span>
+                <span>جاري معالجة وتهيئة الصور المرفوعة...</span>
+              </div>
+            )}
+
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {attachments.map((att) => (
+                <div key={att.id} className="flex items-center justify-between p-2 rounded-lg bg-white border border-stone-200 text-xs gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    {/* Thumbnail if image exists, or document badge */}
+                    {att.previewUrl ? (
+                      <img
+                        src={att.previewUrl}
+                        alt={att.name}
+                        className="w-9 h-9 object-cover rounded border border-stone-200 shrink-0 bg-stone-100"
+                      />
+                    ) : (
+                      <div className="w-9 h-9 rounded bg-stone-100 border border-stone-200 flex items-center justify-center shrink-0 text-stone-500">
+                        <ImageIcon className="w-4 h-4" />
+                      </div>
+                    )}
+
+                    <div className="min-w-0">
+                      <span className="font-semibold text-stone-800 truncate block max-w-xs">{att.name}</span>
+                      <span className="text-stone-400 text-[10px]">{att.fileSize}</span>
+                    </div>
                   </div>
-                  <span className="text-stone-400 text-[11px]">{att.fileSize}</span>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <select
+                      value={att.type}
+                      onChange={(e) => handleChangeAttachmentType(att.id, e.target.value)}
+                      className="text-[11px] px-2 py-1 rounded border border-stone-200 bg-stone-50 text-stone-700 outline-none cursor-pointer"
+                    >
+                      <option value="كتاب رئيسي">كتاب رئيسي</option>
+                      <option value="صورة وثيقة">صورة وثيقة</option>
+                      <option value="أمر إداري">أمر إداري</option>
+                      <option value="وصل مالي">وصل مالي</option>
+                      <option value="قائمة أسماء">قائمة أسماء</option>
+                      <option value="ملحق">ملحق</option>
+                      <option value="أخرى">أخرى</option>
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveAttachment(att.id)}
+                      className="p-1 rounded text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                      title="حذف هذا المرفق"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
             <p className="text-[11px] text-stone-400 text-right">
-              * في النموذج المحلي، يدعم النظام صور الماسح الضوئي المتعددة لكل معاملة.
+              * يدعم النظام رفع صور الكتب الرسمية (JPG/PNG) وملفات PDF الممسوحة ضوئياً ليطّلع عليها المدير مباشرة.
             </p>
           </div>
 
