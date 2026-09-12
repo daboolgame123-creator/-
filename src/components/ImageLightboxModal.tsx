@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   X, 
-  ZoomIn, 
-  ZoomOut, 
   RotateCw, 
   Download, 
   ChevronRight, 
@@ -35,12 +33,28 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
 }) => {
   const [internalIndex, setInternalIndex] = useState<number>(currentIndex);
   const [zoom, setZoom] = useState<number>(1);
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [rotation, setRotation] = useState<number>(0);
   const [copiedToast, setCopiedToast] = useState<boolean>(false);
+  const [isMouseDown, setIsMouseDown] = useState<boolean>(false);
 
-  // Touch swipe refs
-  const touchStartXRef = useRef<number | null>(null);
-  const touchStartYRef = useRef<number | null>(null);
+  // References to keep event handlers fresh and avoid stale closures
+  const zoomRef = useRef<number>(zoom);
+  zoomRef.current = zoom;
+
+  const panRef = useRef<{ x: number; y: number }>(pan);
+  panRef.current = pan;
+
+  const modalRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const mouseDragStartRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Touch gesture tracking
+  const touchStartDistRef = useRef<number | null>(null);
+  const touchStartZoomRef = useRef<number>(1);
+  const touchSwipeStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const lastTouchPosRef = useRef<{ x: number; y: number } | null>(null);
+  const lastTapRef = useRef<number>(0);
 
   // Sync internal index with currentIndex prop
   useEffect(() => {
@@ -83,6 +97,7 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
     setInternalIndex(nextIdx);
     onIndexChange?.(nextIdx);
     setZoom(1);
+    setPan({ x: 0, y: 0 });
     setRotation(0);
   }, [attachments.length, internalIndex, onIndexChange]);
 
@@ -92,42 +107,190 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
     setInternalIndex(prevIdx);
     onIndexChange?.(prevIdx);
     setZoom(1);
+    setPan({ x: 0, y: 0 });
     setRotation(0);
   }, [attachments.length, internalIndex, onIndexChange]);
 
-  // Mobile Touch Swipe Handlers (Swipe left/right to browse attachments)
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (e.touches.length === 1 && zoom === 1) {
-      touchStartXRef.current = e.touches[0].clientX;
-      touchStartYRef.current = e.touches[0].clientY;
+  // Reset zoom, pan, and rotation
+  const handleReset = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setRotation(0);
+  };
+
+  const handleRotate = () => setRotation((prev) => (prev + 90) % 360);
+
+  // Native Non-Passive Wheel Listener:
+  // Strictly prevents page scrolling in the background and smoothly zooms the document
+  useEffect(() => {
+    const modalEl = modalRef.current;
+    if (!modalEl) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      // PREVENT BACKGROUND PAGE & TRANSACTIONS LIST SCROLLING
+      e.preventDefault();
+      e.stopPropagation();
+
+      const delta = e.deltaY < 0 ? 0.25 : -0.25;
+      setZoom((prev) => {
+        const next = Math.min(Math.max(prev + delta, 0.5), 5);
+        if (next <= 1) {
+          setPan({ x: 0, y: 0 });
+        }
+        return Number(next.toFixed(2));
+      });
+    };
+
+    modalEl.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      modalEl.removeEventListener('wheel', handleWheel);
+    };
+  }, []);
+
+  // Native Non-Passive Touch Listeners for Pinch-to-Zoom & Pan on Mobile
+  useEffect(() => {
+    const stageEl = stageRef.current;
+    if (!stageEl) return;
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        // Multi-touch pinch start
+        e.preventDefault();
+        const dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        touchStartDistRef.current = dist;
+        touchStartZoomRef.current = zoomRef.current;
+      } else if (e.touches.length === 1) {
+        // Single touch start (for pan or swipe)
+        const touch = e.touches[0];
+        touchSwipeStartRef.current = {
+          x: touch.clientX,
+          y: touch.clientY,
+          time: Date.now(),
+        };
+        lastTouchPosRef.current = {
+          x: touch.clientX,
+          y: touch.clientY,
+        };
+
+        // Double tap detection
+        const now = Date.now();
+        if (now - lastTapRef.current < 300) {
+          e.preventDefault();
+          if (zoomRef.current > 1) {
+            setZoom(1);
+            setPan({ x: 0, y: 0 });
+          } else {
+            setZoom(2.2);
+          }
+          lastTapRef.current = 0;
+        } else {
+          lastTapRef.current = now;
+        }
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 2 && touchStartDistRef.current) {
+        // Pinching to zoom
+        e.preventDefault();
+        const dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        const ratio = dist / touchStartDistRef.current;
+        const newZoom = Math.min(Math.max(touchStartZoomRef.current * ratio, 0.5), 5);
+        setZoom(Number(newZoom.toFixed(2)));
+        if (newZoom <= 1) {
+          setPan({ x: 0, y: 0 });
+        }
+      } else if (e.touches.length === 1 && zoomRef.current > 1 && lastTouchPosRef.current) {
+        // Single finger panning when zoomed in
+        e.preventDefault();
+        const touch = e.touches[0];
+        const dx = touch.clientX - lastTouchPosRef.current.x;
+        const dy = touch.clientY - lastTouchPosRef.current.y;
+        setPan((prev) => ({
+          x: prev.x + dx,
+          y: prev.y + dy,
+        }));
+        lastTouchPosRef.current = {
+          x: touch.clientX,
+          y: touch.clientY,
+        };
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) {
+        touchStartDistRef.current = null;
+      }
+      if (e.touches.length === 0) {
+        // If not zoomed, check if was a horizontal swipe to switch documents
+        if (zoomRef.current <= 1 && touchSwipeStartRef.current && lastTouchPosRef.current) {
+          const deltaX = lastTouchPosRef.current.x - touchSwipeStartRef.current.x;
+          const deltaY = lastTouchPosRef.current.y - touchSwipeStartRef.current.y;
+          const deltaTime = Date.now() - touchSwipeStartRef.current.time;
+
+          if (deltaTime < 500 && Math.abs(deltaX) > 50 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
+            // Arabic RTL: swiping right goes to previous, swiping left goes to next
+            if (deltaX > 0) {
+              handlePrev();
+            } else {
+              handleNext();
+            }
+          }
+        }
+        touchSwipeStartRef.current = null;
+        lastTouchPosRef.current = null;
+      }
+    };
+
+    stageEl.addEventListener('touchstart', onTouchStart, { passive: false });
+    stageEl.addEventListener('touchmove', onTouchMove, { passive: false });
+    stageEl.addEventListener('touchend', onTouchEnd, { passive: false });
+    stageEl.addEventListener('touchcancel', onTouchEnd, { passive: false });
+
+    return () => {
+      stageEl.removeEventListener('touchstart', onTouchStart);
+      stageEl.removeEventListener('touchmove', onTouchMove);
+      stageEl.removeEventListener('touchend', onTouchEnd);
+      stageEl.removeEventListener('touchcancel', onTouchEnd);
+    };
+  }, [handleNext, handlePrev]);
+
+  // Mouse Drag Panning (when zoomed in on desktop)
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (zoom > 1 && e.button === 0) {
+      setIsMouseDown(true);
+      mouseDragStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
     }
   };
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (touchStartXRef.current === null || touchStartYRef.current === null || zoom !== 1) {
-      touchStartXRef.current = null;
-      touchStartYRef.current = null;
-      return;
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isMouseDown && mouseDragStartRef.current && zoom > 1) {
+      setPan({
+        x: e.clientX - mouseDragStartRef.current.x,
+        y: e.clientY - mouseDragStartRef.current.y,
+      });
     }
+  };
 
-    const endX = e.changedTouches[0].clientX;
-    const endY = e.changedTouches[0].clientY;
-    const deltaX = endX - touchStartXRef.current;
-    const deltaY = endY - touchStartYRef.current;
+  const handleMouseUp = () => {
+    setIsMouseDown(false);
+    mouseDragStartRef.current = null;
+  };
 
-    touchStartXRef.current = null;
-    touchStartYRef.current = null;
-
-    // Must be predominantly horizontal swipe and exceed 45px threshold
-    if (Math.abs(deltaX) > 45 && Math.abs(deltaX) > Math.abs(deltaY) * 1.5) {
-      if (attachments.length > 1) {
-        // In Arabic RTL: swiping right goes to previous, swiping left goes to next
-        if (deltaX > 0) {
-          handlePrev();
-        } else {
-          handleNext();
-        }
-      }
+  // Double Click to Toggle Zoom on Desktop
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (zoom > 1) {
+      setZoom(1);
+      setPan({ x: 0, y: 0 });
+    } else {
+      setZoom(2.2);
     }
   };
 
@@ -140,6 +303,8 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
         handlePrev();
       } else if (e.key === 'ArrowLeft' && attachments.length > 1) {
         handleNext();
+      } else if (e.key === '0' || e.key === 'Home') {
+        handleReset();
       }
     };
 
@@ -150,14 +315,6 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
   }, [handleSafeClose, handlePrev, handleNext, attachments.length]);
 
   if (!activeAttachment || !previewUrl) return null;
-
-  const handleZoomIn = () => setZoom((prev) => Math.min(prev + 0.25, 3.5));
-  const handleZoomOut = () => setZoom((prev) => Math.max(prev - 0.25, 0.5));
-  const handleReset = () => {
-    setZoom(1);
-    setRotation(0);
-  };
-  const handleRotate = () => setRotation((prev) => (prev + 90) % 360);
 
   const handleDownload = () => {
     if (!previewUrl) return;
@@ -219,8 +376,12 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
 
   return (
     <div 
-      className="fixed inset-0 z-[9000] w-screen h-[100dvh] max-h-[100dvh] overflow-hidden bg-stone-950/95 backdrop-blur-md flex flex-col justify-between p-2 sm:p-4 text-white animate-fadeIn select-none"
+      ref={modalRef}
+      className="fixed inset-0 z-[9000] w-screen h-[100dvh] max-h-[100dvh] overflow-hidden bg-stone-950/95 backdrop-blur-md flex flex-col justify-between p-2 sm:p-4 text-white select-none"
       dir="rtl"
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
     >
       {/* Toast feedback for copied link */}
       {copiedToast && (
@@ -229,7 +390,7 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
         </div>
       )}
 
-      {/* FIXED TOP EXIT BUTTON - ALWAYS VISIBLE, NEVER SCROLLS AWAY */}
+      {/* FIXED TOP EXIT BUTTON - ALWAYS VISIBLE */}
       <button
         type="button"
         id="btn-lightbox-fixed-exit"
@@ -241,7 +402,7 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
         <span>خروج ✕</span>
       </button>
 
-      {/* Top Header Controls Bar */}
+      {/* Top Header Controls Bar (WITHOUT the Zoom In and Zoom Out buttons, as requested) */}
       <div className="flex items-center justify-between gap-2 sm:gap-3 border-b border-stone-800/90 pb-2 pt-1 px-1 shrink-0 pl-24 sm:pl-28">
         <div className="flex items-center gap-2 sm:gap-3 truncate">
           {transactionNumber && (
@@ -259,24 +420,21 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
           </div>
         </div>
 
-        {/* Action Buttons (Zoom, Rotate, Reset, Download, Share, Print) */}
+        {/* Action Buttons: (Rotate, Reset, Print, Share, Download) */}
         <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-          <button
-            type="button"
-            onClick={handleZoomIn}
-            className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 transition-colors cursor-pointer border border-stone-700"
-            title="تكبير (+)"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={handleZoomOut}
-            className="p-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-200 transition-colors cursor-pointer border border-stone-700"
-            title="تصغير (-)"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </button>
+          {/* Zoom Level Indicator & Reset when zoomed or rotated */}
+          {(zoom !== 1 || rotation !== 0 || pan.x !== 0 || pan.y !== 0) && (
+            <button
+              type="button"
+              onClick={handleReset}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold transition-colors cursor-pointer border border-amber-500/40 shadow-xs"
+              title="إعادة ضبط الحجم والدوران إلى الحجم الطبيعي"
+            >
+              <span>إعادة ضبط ({Math.round(zoom * 100)}%)</span>
+            </button>
+          )}
+
+          {/* Rotate 90° */}
           <button
             type="button"
             onClick={handleRotate}
@@ -285,16 +443,6 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
           >
             <RotateCw className="w-4 h-4" />
           </button>
-          {(zoom !== 1 || rotation !== 0) && (
-            <button
-              type="button"
-              onClick={handleReset}
-              className="px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[11px] font-semibold transition-colors cursor-pointer border border-amber-500/40"
-              title="إعادة ضبط العرض"
-            >
-              إعادة ضبط
-            </button>
-          )}
 
           {/* Quick Print Button */}
           <button
@@ -329,14 +477,20 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
         </div>
       </div>
 
-      {/* Main Image Stage with Touch Swipe on Mobile */}
+      {/* Main Image Stage:
+          - Mouse wheel zooms in and out cleanly without scrolling background.
+          - On mobile: Pinch-to-zoom with fingers scales the document, and drag moves the view.
+          - Double click / Double tap toggles zoom.
+      */}
       <div 
-        className="flex-1 flex items-center justify-center p-1 sm:p-4 overflow-hidden relative touch-pan-y"
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
+        ref={stageRef}
+        className={`flex-1 flex items-center justify-center p-1 sm:p-4 overflow-hidden relative select-none ${
+          zoom > 1 ? (isMouseDown ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-zoom-in'
+        }`}
+        onMouseDown={handleMouseDown}
+        onDoubleClick={handleDoubleClick}
         onClick={(e) => {
-          // If clicked outside the image itself, close
-          if (e.target === e.currentTarget) {
+          if (e.target === e.currentTarget && zoom <= 1) {
             handleSafeClose();
           }
         }}
@@ -356,18 +510,21 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
           </button>
         )}
 
-        {/* The Scaled / Rotated Image */}
+        {/* The Scaled / Rotated / Translated Document */}
         <div 
-          className="transition-transform duration-150 ease-out flex items-center justify-center max-w-full max-h-full"
+          className="flex items-center justify-center max-w-full max-h-full transition-transform ease-out"
           style={{
-            transform: `scale(${zoom}) rotate(${rotation}deg)`,
+            transform: `translate3d(${pan.x}px, ${pan.y}px, 0px) scale(${zoom}) rotate(${rotation}deg)`,
+            transitionDuration: isMouseDown ? '0ms' : '120ms',
+            transformOrigin: 'center center',
           }}
           onClick={(e) => e.stopPropagation()}
         >
           <img
             src={previewUrl}
             alt={activeAttachment.name}
-            className="max-h-[calc(100dvh-150px)] max-w-[calc(100vw-36px)] object-contain rounded-lg shadow-2xl border border-stone-800 bg-white"
+            draggable={false}
+            className="max-h-[calc(100dvh-140px)] max-w-[calc(100vw-32px)] object-contain rounded-lg shadow-2xl border border-stone-800 bg-white select-none pointer-events-none"
           />
         </div>
 
@@ -407,6 +564,7 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
                   setInternalIndex(idx);
                   onIndexChange?.(idx);
                   setZoom(1);
+                  setPan({ x: 0, y: 0 });
                   setRotation(0);
                 }}
                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer shrink-0 border ${
@@ -430,10 +588,10 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
         )}
 
         <div className="flex items-center gap-3 text-stone-400 text-[11px]">
-          {attachments.length > 1 && (
-            <span className="sm:hidden text-amber-300/90 font-medium">👈 اسحب يميناً أو يساراً للتنقل 👉</span>
-          )}
-          <span className="hidden sm:inline">يمكنك استخدام مفاتيح الأسهم أو السحب للتنقل و <strong>Esc</strong> للخروج</span>
+          <span className="text-amber-300/90 font-medium">
+            💡 التكبير: بعجلة الفارة في الحاسوب أو بأصابع اليد في الهاتف
+          </span>
+          <span className="hidden sm:inline">نقر مزدوج للتكبير/التصغير السريع • <strong>Esc</strong> للخروج</span>
         </div>
       </div>
     </div>

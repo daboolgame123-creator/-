@@ -6,13 +6,44 @@ import { EmployeesView } from './components/EmployeesView';
 import { TransactionDetailModal } from './components/TransactionDetailModal';
 import { NewTransactionModal } from './components/NewTransactionModal';
 import { ImageLightboxModal } from './components/ImageLightboxModal';
+import { ArchivistStudioView } from './components/ArchivistStudioView';
+import { ArchivistEditorModal } from './components/ArchivistEditorModal';
 import { INITIAL_TRANSACTIONS, INITIAL_EMPLOYEES } from './data/mockData';
 import { Transaction, TransactionStatus, Employee, UserRole, Attachment } from './types';
-import { ShieldCheck, Info, Bell, CheckCheck, UserCheck, Eye, Check } from 'lucide-react';
+import { ShieldCheck, Info, Bell, CheckCheck, UserCheck, Eye, Check, Edit3 } from 'lucide-react';
 
 const STORAGE_KEY = 'zatiya_prototype_transactions_v2';
+const EMPLOYEES_STORAGE_KEY = 'zatiya_prototype_employees_v3';
+const DARK_MODE_STORAGE_KEY = 'zatiya_prototype_dark_mode_v1';
 
 export default function App() {
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem(DARK_MODE_STORAGE_KEY);
+      if (saved !== null) {
+        return saved === 'true';
+      }
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(DARK_MODE_STORAGE_KEY, String(isDarkMode));
+    } catch {
+      // ignore
+    }
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+      document.body.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.body.classList.remove('dark');
+    }
+  }, [isDarkMode]);
+
   const [transactions, setTransactions] = useState<Transaction[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
@@ -28,10 +59,25 @@ export default function App() {
     return INITIAL_TRANSACTIONS;
   });
 
-  const [employees] = useState<Employee[]>(INITIAL_EMPLOYEES);
+  const [employees, setEmployees] = useState<Employee[]>(() => {
+    try {
+      const saved = localStorage.getItem(EMPLOYEES_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch {
+      // fallback
+    }
+    return INITIAL_EMPLOYEES;
+  });
+
   const [userRole, setUserRole] = useState<UserRole>('director'); // Default to Director to test the Director view immediately
-  const [currentView, setCurrentView] = useState<'transactions' | 'report' | 'employees'>('transactions');
+  const [currentView, setCurrentView] = useState<'transactions' | 'report' | 'employees' | 'archivist-studio'>('transactions');
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [directAttachmentView, setDirectAttachmentView] = useState<{
     transaction: Transaction;
@@ -61,6 +107,69 @@ export default function App() {
       // ignore
     }
   }, [transactions]);
+
+  // Sync employees to local storage
+  useEffect(() => {
+    try {
+      localStorage.setItem(EMPLOYEES_STORAGE_KEY, JSON.stringify(employees));
+    } catch {
+      // ignore
+    }
+  }, [employees]);
+
+  // Helper to ensure any employee mentioned in a transaction exists in the employees registry
+  const registerEmployeeIfNew = (employeeName?: string, department?: string, date?: string) => {
+    if (!employeeName || !employeeName.trim()) return;
+    const cleanName = employeeName.trim();
+
+    setEmployees((prev) => {
+      const exists = prev.some(
+        (emp) => emp.name.trim().toLowerCase() === cleanName.toLowerCase()
+      );
+      if (exists) return prev;
+
+      const newEmp: Employee = {
+        id: `emp-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        name: cleanName,
+        title: 'منتسب',
+        department: department || 'شعبة الذاتية والإدارية',
+        badgeNumber: `EMP-${Math.floor(1000 + Math.random() * 9000)}`,
+        joinedDate: date || new Date().toISOString().split('T')[0],
+      };
+      return [...prev, newEmp];
+    });
+  };
+
+  // Add new employee directly from Employees View
+  const handleAddEmployee = (newEmp: Omit<Employee, 'id'>) => {
+    const fullEmp: Employee = {
+      ...newEmp,
+      id: `emp-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    };
+    setEmployees((prev) => [fullEmp, ...prev]);
+  };
+
+  // Update existing employee in registry & sync to transactions if name changed
+  const handleUpdateEmployee = (updatedEmp: Employee, oldName?: string) => {
+    setEmployees((prev) =>
+      prev.map((emp) => (emp.id === updatedEmp.id ? updatedEmp : emp))
+    );
+    if (oldName && oldName.trim() !== updatedEmp.name.trim()) {
+      // Sync any transactions that referenced the old name to the new updated name
+      setTransactions((prev) =>
+        prev.map((t) =>
+          t.employeeName?.trim() === oldName.trim()
+            ? { ...t, employeeName: updatedEmp.name.trim() }
+            : t
+        )
+      );
+    }
+  };
+
+  // Delete employee from registry
+  const handleDeleteEmployee = (empId: string) => {
+    setEmployees((prev) => prev.filter((emp) => emp.id !== empId));
+  };
 
   // Unread count
   const unreadCount = transactions.filter((t) => !t.isRead).length;
@@ -197,6 +306,40 @@ export default function App() {
   // Add new transaction (by archivist)
   const handleAddTransaction = (newTr: Transaction) => {
     setTransactions((prev) => [newTr, ...prev]);
+    if (newTr.employeeName) {
+      registerEmployeeIfNew(newTr.employeeName, newTr.entity, newTr.date);
+    } else if (newTr.category === 'منتسبين' && newTr.entity) {
+      registerEmployeeIfNew(newTr.entity, 'شعبة الذاتية والإدارية', newTr.date);
+    }
+  };
+
+  // Save entire transaction updates (fields, attachments, edits)
+  const handleSaveTransaction = (updatedTr: Transaction) => {
+    setTransactions((prev) =>
+      prev.map((item) => (item.id === updatedTr.id ? updatedTr : item))
+    );
+    if (updatedTr.employeeName) {
+      registerEmployeeIfNew(updatedTr.employeeName, updatedTr.entity, updatedTr.date);
+    } else if (updatedTr.category === 'منتسبين' && updatedTr.entity) {
+      registerEmployeeIfNew(updatedTr.entity, 'شعبة الذاتية والإدارية', updatedTr.date);
+    }
+    if (selectedTransaction && selectedTransaction.id === updatedTr.id) {
+      setSelectedTransaction(updatedTr);
+    }
+    if (editingTransaction && editingTransaction.id === updatedTr.id) {
+      setEditingTransaction(updatedTr);
+    }
+  };
+
+  // Delete transaction permanently
+  const handleDeleteTransaction = (id: string) => {
+    setTransactions((prev) => prev.filter((item) => item.id !== id));
+    if (selectedTransaction?.id === id) {
+      setSelectedTransaction(null);
+    }
+    if (editingTransaction?.id === id) {
+      setEditingTransaction(null);
+    }
   };
 
   // Update attachments for any transaction (add photos, edit name/type, delete)
@@ -247,7 +390,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#faf9f6] text-[#1c1917] flex flex-col font-['Tajawal',sans-serif]">
+    <div className="min-h-screen bg-[#faf9f6] dark:bg-stone-950 text-[#1c1917] dark:text-stone-100 flex flex-col font-['Tajawal',sans-serif] transition-colors">
       {/* App Header */}
       <Header
         currentView={currentView}
@@ -257,69 +400,12 @@ export default function App() {
         userRole={userRole}
         setUserRole={setUserRole}
         onMarkAllAsRead={handleMarkAllAsRead}
+        isDarkMode={isDarkMode}
+        onToggleDarkMode={() => setIsDarkMode((prev) => !prev)}
       />
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-5">
-        {/* Dynamic Director Notification Banner */}
-        {userRole === 'director' ? (
-          <div className="mb-4 p-4 rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/90 text-amber-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-800 shrink-0">
-                <Bell className="w-5 h-5 text-amber-700" />
-              </div>
-              <div>
-                <h2 className="text-xs sm:text-sm font-bold text-amber-950 flex items-center gap-2">
-                  <span>رابط الاطلاع المباشر للسيد المدير</span>
-                  {unreadCount > 0 ? (
-                    <span className="bg-rose-500 text-white text-[11px] font-bold px-2 py-0.5 rounded-full animate-bounce">
-                      {unreadCount} غير مقروء 🔴
-                    </span>
-                  ) : (
-                    <span className="bg-emerald-600 text-white text-[11px] font-bold px-2 py-0.5 rounded-full">
-                      تم الاطلاع على كافة الكتب ✓
-                    </span>
-                  )}
-                </h2>
-                <p className="text-xs text-amber-800/90 mt-0.5 leading-relaxed">
-                  {unreadCount > 0
-                    ? `يوجد ${unreadCount} كتب رسمية جديدة رُفعت بواسطة قسم الذاتية بانتظار اطلاعك عليها. بمجرد النقر على المعاملة ستتحول تلقائياً إلى «مقروء ✓».`
-                    : 'لا توجد كتب جديدة غير مقروءة حالياً. يمكنك تصفح الأرشيف والتقارير الشهرية في أي وقت.'}
-                </p>
-              </div>
-            </div>
-
-            {unreadCount > 0 && (
-              <button
-                type="button"
-                id="btn-banner-mark-all-read"
-                onClick={handleMarkAllAsRead}
-                className="shrink-0 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-900 hover:bg-amber-800 text-white text-xs font-semibold transition-colors cursor-pointer shadow-xs"
-              >
-                <CheckCheck className="w-3.5 h-3.5 text-amber-300" />
-                <span>تحديد الكل كمقروء ✓</span>
-              </button>
-            )}
-          </div>
-        ) : (
-          /* Archivist Notification Banner */
-          <div className="mb-4 p-3.5 rounded-xl bg-stone-100 border border-stone-200 text-stone-800 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
-            <div className="flex items-center gap-2.5">
-              <Info className="w-4 h-4 text-stone-600 shrink-0" />
-              <p className="leading-relaxed">
-                <strong>واجهة مسؤول الذاتية والأرشفة:</strong> يمكنك رفع الكتب الجديدة مع مرفقاتها (صور، PDF). ستصل فوراً إلى رابط السيد المدير وتأخذ حالة «غير مقروء 🔴» حتى يقوم بالاطلاع عليها.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setIsNewModalOpen(true)}
-              className="shrink-0 inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-stone-900 text-white text-xs font-semibold hover:bg-stone-800 cursor-pointer"
-            >
-              + رفع كتاب جديد
-            </button>
-          </div>
-        )}
-
         {/* Dynamic Views */}
         {currentView === 'transactions' && (
           <TransactionsList
@@ -330,6 +416,20 @@ export default function App() {
             onUpdateStatus={handleUpdateStatus}
             onOpenNewModal={() => setIsNewModalOpen(true)}
             userRole={userRole}
+            onViewAttachmentDirectly={handleViewAttachmentDirectly}
+            onEditTransaction={(tr) => setEditingTransaction(tr)}
+            onDeleteTransaction={handleDeleteTransaction}
+            onNavigateToStudio={() => setCurrentView('archivist-studio')}
+          />
+        )}
+
+        {currentView === 'archivist-studio' && (
+          <ArchivistStudioView
+            transactions={transactions}
+            employees={employees}
+            onSaveTransaction={handleSaveTransaction}
+            onDeleteTransaction={handleDeleteTransaction}
+            onOpenNewModal={() => setIsNewModalOpen(true)}
             onViewAttachmentDirectly={handleViewAttachmentDirectly}
           />
         )}
@@ -346,25 +446,53 @@ export default function App() {
             employees={employees}
             transactions={transactions}
             onSelectTransaction={handleSelectTransaction}
+            onAddEmployee={handleAddEmployee}
+            onUpdateEmployee={handleUpdateEmployee}
+            onDeleteEmployee={handleDeleteEmployee}
+            userRole={userRole}
           />
         )}
       </main>
 
       {/* Modals */}
-      <TransactionDetailModal
-        transaction={selectedTransaction}
-        onClose={() => setSelectedTransaction(null)}
-        onUpdateStatus={handleUpdateStatus}
-        onToggleReadStatus={() => selectedTransaction && handleToggleReadStatus(selectedTransaction.id)}
-        onUpdateAttachments={handleUpdateAttachments}
-      />
+      {selectedTransaction && (
+        <TransactionDetailModal
+          transaction={selectedTransaction}
+          onClose={() => setSelectedTransaction(null)}
+          onUpdateStatus={handleUpdateStatus}
+          onToggleReadStatus={() => handleToggleReadStatus(selectedTransaction.id)}
+          onUpdateAttachments={handleUpdateAttachments}
+        />
+      )}
 
-      <NewTransactionModal
-        isOpen={isNewModalOpen}
-        onClose={() => setIsNewModalOpen(false)}
-        onAddTransaction={handleAddTransaction}
-        employees={employees.map((e) => e.name)}
-      />
+      {/* Full Comprehensive Archivist Editor Modal */}
+      {editingTransaction && (
+        <ArchivistEditorModal
+          isOpen={true}
+          transaction={editingTransaction}
+          onClose={() => setEditingTransaction(null)}
+          onSaveTransaction={handleSaveTransaction}
+          onDeleteTransaction={handleDeleteTransaction}
+          employees={employees.map((e) => e.name)}
+          onOpenLightbox={(att, atts, idx) => {
+            if (editingTransaction) {
+              setDirectAttachmentView({
+                transaction: { ...editingTransaction, attachments: atts },
+                attachmentIndex: idx,
+              });
+            }
+          }}
+        />
+      )}
+
+      {isNewModalOpen && (
+        <NewTransactionModal
+          isOpen={true}
+          onClose={() => setIsNewModalOpen(false)}
+          onAddTransaction={handleAddTransaction}
+          employees={employees.map((e) => e.name)}
+        />
+      )}
 
       {/* Direct Full-Screen Image & Document Lightbox with Fixed Exit Button */}
       {directAttachmentView && directAttachmentView.transaction.attachments && directAttachmentView.transaction.attachments.length > 0 && (
@@ -383,7 +511,7 @@ export default function App() {
       )}
 
       {/* Footer */}
-      <footer className="border-t border-stone-200 bg-white py-4 px-6 text-center text-xs text-stone-500">
+      <footer className="border-t border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 py-4 px-6 text-center text-xs text-stone-500 dark:text-stone-400">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>منظومة متابعة الذاتية والتقارير • الإصدار التجريبي 0.1 • رابط مباشر لمدير المركز</span>
           <span className="flex items-center gap-1.5 text-stone-400">

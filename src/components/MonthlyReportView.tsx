@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   BarChart3, 
   Calendar, 
@@ -7,14 +7,15 @@ import {
   CheckCircle2, 
   Clock, 
   Printer, 
-  Download, 
-  ChevronLeft, 
   ArrowUpRight, 
   ArrowDownLeft, 
   DollarSign, 
   Briefcase, 
   Users,
-  Eye
+  Eye,
+  Search,
+  Layers,
+  HelpCircle
 } from 'lucide-react';
 import { Transaction } from '../types';
 
@@ -23,22 +24,111 @@ interface MonthlyReportViewProps {
   onSelectTransaction: (transaction: Transaction) => void;
 }
 
+const getArabicMonthName = (monthStr: string): string => {
+  if (!monthStr || monthStr === 'all') return 'كافة الأشهر (السجل العام)';
+  const parts = monthStr.split('-');
+  if (parts.length < 2) return monthStr;
+  const year = parts[0];
+  const month = parts[1];
+
+  const monthNames: Record<string, string> = {
+    '01': 'كانون الثاني (يناير)',
+    '02': 'شباط (فبراير)',
+    '03': 'آذار (مارس)',
+    '04': 'نيسان (أبريل)',
+    '05': 'أيار (مايو)',
+    '06': 'حزيران (يونيو)',
+    '07': 'تموز (يوليو)',
+    '08': 'آب (أغسطس)',
+    '09': 'أيلول (سبتمبر)',
+    '10': 'تشرين الأول (أكتوبر)',
+    '11': 'تشرين الثاني (نوفمبر)',
+    '12': 'كانون الأول (ديسمبر)',
+  };
+
+  return `${monthNames[month] || month} ${year}`;
+};
+
 export const MonthlyReportView: React.FC<MonthlyReportViewProps> = ({
   transactions,
   onSelectTransaction,
 }) => {
-  const [selectedMonth, setSelectedMonth] = useState('2026-08');
-  const [activeTab, setActiveTab] = useState<'all' | 'administrative' | 'financial' | 'personnel' | 'outgoing' | 'incoming'>('all');
+  // Dynamically extract all unique months present in transactions
+  const availableMonths = useMemo(() => {
+    const set = new Set<string>();
+    // Add current month by default
+    const nowMonth = new Date().toISOString().substring(0, 7);
+    set.add(nowMonth);
 
-  // Filter transactions by selected month
-  const monthTransactions = transactions.filter((t) => t.month === selectedMonth);
+    transactions.forEach((t) => {
+      if (t.month && t.month.length === 7) {
+        set.add(t.month);
+      } else if (t.date && t.date.length >= 7) {
+        set.add(t.date.substring(0, 7));
+      }
+    });
 
-  // Groupings
-  const administrativeTrs = monthTransactions.filter((t) => t.category === 'إدارية');
-  const financialTrs = monthTransactions.filter((t) => t.category === 'مالية');
-  const personnelTrs = monthTransactions.filter((t) => t.category === 'منتسبين');
-  const outgoingTrs = monthTransactions.filter((t) => t.direction === 'صادر');
-  const incomingTrs = monthTransactions.filter((t) => t.direction === 'وارد');
+    return Array.from(set).sort().reverse();
+  }, [transactions]);
+
+  // Determine initial default month: the month of the latest transaction or current month
+  const defaultMonth = useMemo(() => {
+    if (transactions.length > 0) {
+      const latest = transactions[0];
+      const m = latest.month || latest.date?.substring(0, 7);
+      if (m && m.length === 7) return m;
+    }
+    return availableMonths[0] || 'all';
+  }, [transactions, availableMonths]);
+
+  const [selectedMonth, setSelectedMonth] = useState<string>(defaultMonth);
+  const [activeTab, setActiveTab] = useState<'all' | 'administrative' | 'financial' | 'personnel' | 'outgoing' | 'incoming' | 'other'>('all');
+  const [reportSearch, setReportSearch] = useState('');
+
+  // If new transactions are added in a different month, ensure selectedMonth stays valid or offers all
+  useEffect(() => {
+    if (selectedMonth !== 'all' && !availableMonths.includes(selectedMonth)) {
+      setSelectedMonth(defaultMonth);
+    }
+  }, [availableMonths, selectedMonth, defaultMonth]);
+
+  // Filter transactions by selected month (or all)
+  const monthTransactions = useMemo(() => {
+    if (selectedMonth === 'all') {
+      return transactions;
+    }
+    return transactions.filter((t) => {
+      const trMonth = t.month || t.date?.substring(0, 7);
+      return trMonth === selectedMonth;
+    });
+  }, [transactions, selectedMonth]);
+
+  // Groupings by section / category
+  const administrativeTrs = useMemo(
+    () => monthTransactions.filter((t) => t.category === 'إدارية'),
+    [monthTransactions]
+  );
+  const financialTrs = useMemo(
+    () => monthTransactions.filter((t) => t.category === 'مالية'),
+    [monthTransactions]
+  );
+  // Personnel section: any transaction categorized as 'منتسبين' OR having an employeeName associated with it!
+  const personnelTrs = useMemo(
+    () => monthTransactions.filter((t) => t.category === 'منتسبين' || Boolean(t.employeeName && t.employeeName.trim())),
+    [monthTransactions]
+  );
+  const outgoingTrs = useMemo(
+    () => monthTransactions.filter((t) => t.direction === 'صادر'),
+    [monthTransactions]
+  );
+  const incomingTrs = useMemo(
+    () => monthTransactions.filter((t) => t.direction === 'وارد'),
+    [monthTransactions]
+  );
+  const otherTrs = useMemo(
+    () => monthTransactions.filter((t) => t.category === 'أخرى' || (!['إدارية', 'مالية', 'منتسبين'].includes(t.category) && !t.employeeName)),
+    [monthTransactions]
+  );
 
   // Counts & stats
   const total = monthTransactions.length;
@@ -47,70 +137,94 @@ export const MonthlyReportView: React.FC<MonthlyReportViewProps> = ({
   const newCount = monthTransactions.filter((t) => t.status === 'جديد').length;
   const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
 
-  // Decide which list to show
-  let displayedList = monthTransactions;
-  let sectionTitle = 'كافة معاملات الشهر';
-  if (activeTab === 'administrative') {
-    displayedList = administrativeTrs;
-    sectionTitle = 'المعاملات الإدارية (إيفادات، تكاليف، أوامر...)';
-  } else if (activeTab === 'financial') {
-    displayedList = financialTrs;
-    sectionTitle = 'المعاملات المالية (صرف مستحقات، سلف...)';
-  } else if (activeTab === 'personnel') {
-    displayedList = personnelTrs;
-    sectionTitle = 'معاملات شؤون المنتسبين (إجازات، مباشرة، انفكاك...)';
-  } else if (activeTab === 'outgoing') {
-    displayedList = outgoingTrs;
-    sectionTitle = 'الكتب الصادرة من المركز';
-  } else if (activeTab === 'incoming') {
-    displayedList = incomingTrs;
-    sectionTitle = 'الكتب الواردة إلى المركز';
-  }
+  // Decide which list to show based on active tab
+  const tabList = useMemo(() => {
+    switch (activeTab) {
+      case 'administrative':
+        return { list: administrativeTrs, title: 'المعاملات الإدارية (إيفادات، تكاليف، أوامر...)' };
+      case 'financial':
+        return { list: financialTrs, title: 'المعاملات المالية (صرف مستحقات، سلف، موازنة...)' };
+      case 'personnel':
+        return { list: personnelTrs, title: 'معاملات شؤون المنتسبين والذاتية (إجازات، مباشرة، انفكاك، باجات...)' };
+      case 'outgoing':
+        return { list: outgoingTrs, title: 'الكتب الصادرة الرسمية من المركز' };
+      case 'incoming':
+        return { list: incomingTrs, title: 'الكتب الواردة الرسمية إلى المركز' };
+      case 'other':
+        return { list: otherTrs, title: 'المعاملات والكتب العامة الأخرى' };
+      default:
+        return { list: monthTransactions, title: 'كافة معاملات وكتب التقرير' };
+    }
+  }, [activeTab, administrativeTrs, financialTrs, personnelTrs, outgoingTrs, incomingTrs, otherTrs, monthTransactions]);
+
+  // Apply search query within report
+  const displayedList = useMemo(() => {
+    const q = reportSearch.trim().toLowerCase();
+    if (!q) return tabList.list;
+    return tabList.list.filter(
+      (t) =>
+        t.number.toLowerCase().includes(q) ||
+        t.sequence.toLowerCase().includes(q) ||
+        t.subject.toLowerCase().includes(q) ||
+        t.entity.toLowerCase().includes(q) ||
+        t.subType.toLowerCase().includes(q) ||
+        (t.employeeName && t.employeeName.toLowerCase().includes(q))
+    );
+  }, [tabList.list, reportSearch]);
 
   const handlePrint = () => {
     window.print();
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Top Controls Bar */}
-      <div className="bg-white rounded-xl border border-stone-200 p-4 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div className="bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 p-4 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 flex items-center justify-center">
-            <BarChart3 className="w-5 h-5 text-amber-600" />
+          <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 flex items-center justify-center shadow-2xs">
+            <BarChart3 className="w-5 h-5 text-amber-600 dark:text-amber-400" />
           </div>
           <div>
-            <h2 className="text-base font-bold text-stone-900">
-              ملف التقرير الشهري المنظم
+            <h2 className="text-base font-bold text-stone-900 dark:text-stone-100 flex items-center gap-2">
+              <span>ملف التقرير الشهري المنظم</span>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-900 dark:text-amber-300 border border-amber-300/40">
+                {selectedMonth === 'all' ? 'السجل العام الشامل' : getArabicMonthName(selectedMonth)}
+              </span>
             </h2>
-            <p className="text-xs text-stone-500">
-              تجميع إحصائي وتفصيلي تفاعلي مصنف لجميع الكتب والمعاملات
+            <p className="text-xs text-stone-500 dark:text-stone-400">
+              تحديث فوري مع كل معاملة جديدة تضاف لأي قسم (إدارية، مالية، منتسبين، صادر، وارد)
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          {/* Month selector */}
-          <div className="flex items-center gap-1.5 bg-stone-50 px-3 py-1.5 rounded-lg border border-stone-200 text-xs">
-            <Calendar className="w-4 h-4 text-stone-500" />
-            <span className="font-semibold text-stone-700">شهر التقرير:</span>
+        <div className="flex items-center gap-2.5 flex-wrap w-full sm:w-auto justify-end">
+          {/* Dynamic Month Selector */}
+          <div className="flex items-center gap-1.5 bg-stone-50 dark:bg-stone-800 px-3 py-1.5 rounded-lg border border-stone-200 dark:border-stone-700 text-xs">
+            <Calendar className="w-4 h-4 text-stone-500 dark:text-stone-400" />
+            <span className="font-semibold text-stone-700 dark:text-stone-300">الشهر:</span>
             <select
               value={selectedMonth}
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="bg-transparent font-bold text-stone-900 outline-hidden cursor-pointer"
+              className="bg-transparent font-bold text-stone-900 dark:text-stone-100 outline-hidden cursor-pointer"
             >
-              <option value="2026-08">آب (أغسطس) 2026</option>
-              <option value="2026-07">تموز (يوليو) 2026</option>
-              <option value="2026-09">أيلول (سبتمبر) 2026</option>
+              <option value="all">كافة الأشهر ({transactions.length} معاملة إجمالية)</option>
+              {availableMonths.map((m) => {
+                const count = transactions.filter((t) => (t.month || t.date?.substring(0, 7)) === m).length;
+                return (
+                  <option key={m} value={m}>
+                    {getArabicMonthName(m)} ({count} معاملة)
+                  </option>
+                );
+              })}
             </select>
           </div>
 
           <button
             type="button"
             onClick={handlePrint}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-200 bg-white hover:bg-stone-50 text-xs font-semibold text-stone-700 transition-colors shadow-xs cursor-pointer"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 hover:bg-stone-50 dark:hover:bg-stone-700 text-xs font-semibold text-stone-700 dark:text-stone-200 transition-colors shadow-xs cursor-pointer"
           >
-            <Printer className="w-3.5 h-3.5 text-stone-600" />
+            <Printer className="w-3.5 h-3.5 text-stone-600 dark:text-stone-400" />
             طباعة التقرير
           </button>
         </div>
@@ -118,193 +232,304 @@ export const MonthlyReportView: React.FC<MonthlyReportViewProps> = ({
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-        <div className="p-4 rounded-xl bg-white border border-stone-200 shadow-xs">
-          <span className="text-xs font-medium text-stone-500 block mb-1">إجمالي المعاملات</span>
-          <div className="text-2xl font-bold text-stone-900">{total}</div>
-          <span className="text-[11px] text-stone-400 mt-1 block">خلال شهر آب 2026</span>
+        <div className="p-4 rounded-xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 shadow-xs">
+          <span className="text-xs font-medium text-stone-500 dark:text-stone-400 block mb-1">إجمالي المعاملات</span>
+          <div className="text-2xl font-bold text-stone-900 dark:text-stone-100">{total}</div>
+          <span className="text-[11px] text-stone-400 dark:text-stone-500 mt-1 block">
+            {selectedMonth === 'all' ? 'كافة الفترات المسجلة' : `خلال ${getArabicMonthName(selectedMonth)}`}
+          </span>
         </div>
 
-        <div className="p-4 rounded-xl bg-white border border-stone-200 shadow-xs">
-          <span className="text-xs font-medium text-emerald-600 block mb-1">المعاملات المكتملة</span>
-          <div className="text-2xl font-bold text-emerald-700">{completed}</div>
-          <span className="text-[11px] text-stone-400 mt-1 block">بنسبة إنجاز {completionRate}%</span>
+        <div className="p-4 rounded-xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 shadow-xs">
+          <span className="text-xs font-medium text-emerald-600 dark:text-emerald-400 block mb-1">المعاملات المكتملة</span>
+          <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-400">{completed}</div>
+          <span className="text-[11px] text-stone-400 dark:text-stone-500 mt-1 block">بنسبة إنجاز {completionRate}%</span>
         </div>
 
-        <div className="p-4 rounded-xl bg-white border border-stone-200 shadow-xs">
-          <span className="text-xs font-medium text-amber-600 block mb-1">قيد الإنجاز للمتابعة</span>
-          <div className="text-2xl font-bold text-amber-700">{inProgress}</div>
-          <span className="text-[11px] text-stone-400 mt-1 block">تتطلب استكمال الإجراء</span>
+        <div className="p-4 rounded-xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 shadow-xs">
+          <span className="text-xs font-medium text-amber-600 dark:text-amber-400 block mb-1">قيد الإنجاز للمتابعة</span>
+          <div className="text-2xl font-bold text-amber-700 dark:text-amber-400">{inProgress}</div>
+          <span className="text-[11px] text-stone-400 dark:text-stone-500 mt-1 block">
+            {newCount > 0 ? `${newCount} جديدة • ` : ''} تتطلب إجراءات
+          </span>
         </div>
 
-        <div className="p-4 rounded-xl bg-white border border-stone-200 shadow-xs">
-          <span className="text-xs font-medium text-blue-600 block mb-1">الكتب الصادرة والواردة</span>
-          <div className="text-lg font-bold text-stone-900 flex items-center gap-2 mt-1">
-            <span className="text-indigo-600">{outgoingTrs.length} صادر</span>
-            <span className="text-stone-300">/</span>
-            <span className="text-amber-600">{incomingTrs.length} وارد</span>
+        <div className="p-4 rounded-xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 shadow-xs">
+          <span className="text-xs font-medium text-blue-600 dark:text-blue-400 block mb-1">الكتب الصادرة والواردة</span>
+          <div className="text-lg font-bold text-stone-900 dark:text-stone-100 flex items-center gap-2 mt-1">
+            <span className="text-indigo-600 dark:text-indigo-400">{outgoingTrs.length} صادر</span>
+            <span className="text-stone-300 dark:text-stone-600">/</span>
+            <span className="text-amber-600 dark:text-amber-400">{incomingTrs.length} وارد</span>
           </div>
-          <span className="text-[11px] text-stone-400 mt-1 block">حركة المراسلات الرسمية</span>
+          <span className="text-[11px] text-stone-400 dark:text-stone-500 mt-1 block">حركة المراسلات الرسمية</span>
         </div>
       </div>
 
-      {/* Interactive Dossier Tree Navigation */}
-      <div className="bg-white rounded-xl border border-stone-200 p-4 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-bold text-stone-900 flex items-center gap-2">
-            <FolderTree className="w-4 h-4 text-stone-600" />
-            شجرة التقرير الشهري (اختر الباب للاستعراض):
+      {/* Interactive Dossier Tree Navigation (All requested departments & categories) */}
+      <div className="bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 p-4 shadow-xs space-y-3">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+          <h3 className="text-sm font-bold text-stone-900 dark:text-stone-100 flex items-center gap-2">
+            <FolderTree className="w-4 h-4 text-stone-600 dark:text-stone-400" />
+            أقسام وأبواب التقرير الشهري:
           </h3>
-          <span className="text-xs text-stone-400">انقر على أي قسم لفرز المعاملات المرتبطة به</span>
+          <span className="text-xs text-stone-400 dark:text-stone-500">
+            انقر على أي قسم لفرز المعاملات المرتبطة به تلقائياً
+          </span>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+        {/* Categories Tab Selector Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 text-xs">
+          {/* 1. All */}
           <button
             type="button"
             onClick={() => setActiveTab('all')}
             className={`p-3 rounded-lg border text-right transition-all cursor-pointer ${
               activeTab === 'all'
-                ? 'bg-stone-900 text-white border-stone-900 shadow-xs'
-                : 'bg-stone-50 hover:bg-stone-100 text-stone-700 border-stone-200'
+                ? 'bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 border-stone-900 dark:border-amber-400 shadow-xs font-bold'
+                : 'bg-stone-50 dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700/80 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700'
             }`}
           >
             <div className="font-bold mb-1 flex items-center justify-between">
-              <span>كافة الأقسام</span>
-              <span className="text-[11px] font-normal opacity-80">({total})</span>
+              <span className="flex items-center gap-1">
+                <Layers className="w-3.5 h-3.5 text-stone-400 dark:text-stone-900" />
+                كافة الأقسام
+              </span>
+              <span className="text-[11px] font-mono">({total})</span>
             </div>
-            <p className="text-[11px] opacity-75">المعاملات الإجمالية</p>
+            <p className="text-[10px] opacity-80">السجل الإجمالي</p>
           </button>
 
+          {/* 2. Administrative */}
           <button
             type="button"
             onClick={() => setActiveTab('administrative')}
             className={`p-3 rounded-lg border text-right transition-all cursor-pointer ${
               activeTab === 'administrative'
-                ? 'bg-stone-900 text-white border-stone-900 shadow-xs'
-                : 'bg-stone-50 hover:bg-stone-100 text-stone-700 border-stone-200'
+                ? 'bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 border-stone-900 dark:border-amber-400 shadow-xs font-bold'
+                : 'bg-stone-50 dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700/80 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700'
             }`}
           >
             <div className="font-bold mb-1 flex items-center justify-between">
               <span className="flex items-center gap-1">
-                <Briefcase className="w-3.5 h-3.5 text-amber-400" /> الإدارية
+                <Briefcase className="w-3.5 h-3.5 text-amber-500" />
+                الإدارية
               </span>
-              <span className="text-[11px] font-normal opacity-80">({administrativeTrs.length})</span>
+              <span className="text-[11px] font-mono">({administrativeTrs.length})</span>
             </div>
-            <p className="text-[11px] opacity-75">إيفادات، تكاليف، أوامر</p>
+            <p className="text-[10px] opacity-80">إيفادات، تكاليف، أوامر</p>
           </button>
 
+          {/* 3. Financial */}
           <button
             type="button"
             onClick={() => setActiveTab('financial')}
             className={`p-3 rounded-lg border text-right transition-all cursor-pointer ${
               activeTab === 'financial'
-                ? 'bg-stone-900 text-white border-stone-900 shadow-xs'
-                : 'bg-stone-50 hover:bg-stone-100 text-stone-700 border-stone-200'
+                ? 'bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 border-stone-900 dark:border-amber-400 shadow-xs font-bold'
+                : 'bg-stone-50 dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700/80 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700'
             }`}
           >
             <div className="font-bold mb-1 flex items-center justify-between">
               <span className="flex items-center gap-1">
-                <DollarSign className="w-3.5 h-3.5 text-emerald-400" /> المالية
+                <DollarSign className="w-3.5 h-3.5 text-emerald-500" />
+                المالية
               </span>
-              <span className="text-[11px] font-normal opacity-80">({financialTrs.length})</span>
+              <span className="text-[11px] font-mono">({financialTrs.length})</span>
             </div>
-            <p className="text-[11px] opacity-75">صرف مستحقات، سلف</p>
+            <p className="text-[10px] opacity-80">صرف مستحقات، سلف</p>
           </button>
 
+          {/* 4. Personnel (شؤون المنتسبين) */}
           <button
             type="button"
             onClick={() => setActiveTab('personnel')}
             className={`p-3 rounded-lg border text-right transition-all cursor-pointer ${
               activeTab === 'personnel'
-                ? 'bg-stone-900 text-white border-stone-900 shadow-xs'
-                : 'bg-stone-50 hover:bg-stone-100 text-stone-700 border-stone-200'
+                ? 'bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 border-stone-900 dark:border-amber-400 shadow-xs font-bold'
+                : 'bg-stone-50 dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700/80 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700'
             }`}
           >
             <div className="font-bold mb-1 flex items-center justify-between">
               <span className="flex items-center gap-1">
-                <Users className="w-3.5 h-3.5 text-blue-400" /> المنتسبين
+                <Users className="w-3.5 h-3.5 text-blue-500" />
+                المنتسبين
               </span>
-              <span className="text-[11px] font-normal opacity-80">({personnelTrs.length})</span>
+              <span className="text-[11px] font-mono">({personnelTrs.length})</span>
             </div>
-            <p className="text-[11px] opacity-75">إجازات، مباشرة، انفكاك</p>
+            <p className="text-[10px] opacity-80">إجازات، مباشرة، انفكاك</p>
           </button>
 
+          {/* 5. Outgoing */}
           <button
             type="button"
             onClick={() => setActiveTab('outgoing')}
             className={`p-3 rounded-lg border text-right transition-all cursor-pointer ${
               activeTab === 'outgoing'
-                ? 'bg-stone-900 text-white border-stone-900 shadow-xs'
-                : 'bg-stone-50 hover:bg-stone-100 text-stone-700 border-stone-200'
+                ? 'bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 border-stone-900 dark:border-amber-400 shadow-xs font-bold'
+                : 'bg-stone-50 dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700/80 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700'
             }`}
           >
             <div className="font-bold mb-1 flex items-center justify-between">
               <span className="flex items-center gap-1">
-                <ArrowUpRight className="w-3.5 h-3.5 text-indigo-400" /> الصادر
+                <ArrowUpRight className="w-3.5 h-3.5 text-indigo-500" />
+                الصادر
               </span>
-              <span className="text-[11px] font-normal opacity-80">({outgoingTrs.length})</span>
+              <span className="text-[11px] font-mono">({outgoingTrs.length})</span>
             </div>
-            <p className="text-[11px] opacity-75">المخاطبات إلى الخارج</p>
+            <p className="text-[10px] opacity-80">الكتب الصادرة للخارج</p>
+          </button>
+
+          {/* 6. Incoming */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('incoming')}
+            className={`p-3 rounded-lg border text-right transition-all cursor-pointer ${
+              activeTab === 'incoming'
+                ? 'bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 border-stone-900 dark:border-amber-400 shadow-xs font-bold'
+                : 'bg-stone-50 dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700/80 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700'
+            }`}
+          >
+            <div className="font-bold mb-1 flex items-center justify-between">
+              <span className="flex items-center gap-1">
+                <ArrowDownLeft className="w-3.5 h-3.5 text-amber-500" />
+                الوارد
+              </span>
+              <span className="text-[11px] font-mono">({incomingTrs.length})</span>
+            </div>
+            <p className="text-[10px] opacity-80">الكتب الواردة للمركز</p>
+          </button>
+
+          {/* 7. Other */}
+          <button
+            type="button"
+            onClick={() => setActiveTab('other')}
+            className={`p-3 rounded-lg border text-right transition-all cursor-pointer ${
+              activeTab === 'other'
+                ? 'bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 border-stone-900 dark:border-amber-400 shadow-xs font-bold'
+                : 'bg-stone-50 dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700/80 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-stone-700'
+            }`}
+          >
+            <div className="font-bold mb-1 flex items-center justify-between">
+              <span className="flex items-center gap-1">
+                <HelpCircle className="w-3.5 h-3.5 text-stone-500" />
+                أخرى
+              </span>
+              <span className="text-[11px] font-mono">({otherTrs.length})</span>
+            </div>
+            <p className="text-[10px] opacity-80">معاملات عامة متنوعة</p>
           </button>
         </div>
       </div>
 
       {/* Breakdown List for the Selected Branch */}
-      <div className="bg-white rounded-xl border border-stone-200 overflow-hidden shadow-xs">
-        <div className="p-4 bg-stone-50 border-b border-stone-200 flex items-center justify-between">
-          <h4 className="text-xs font-bold text-stone-800">
-            {sectionTitle} ({displayedList.length} سجلات)
-          </h4>
-          <span className="text-xs text-stone-400">
-            تنسيق رسمي معد للمدير ومسؤول الذاتية
-          </span>
+      <div className="bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 overflow-hidden shadow-xs">
+        <div className="p-4 bg-stone-50 dark:bg-stone-800/80 border-b border-stone-200 dark:border-stone-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div>
+            <h4 className="text-xs font-bold text-stone-900 dark:text-stone-100 flex items-center gap-2">
+              <span>{tabList.title}</span>
+              <span className="px-2 py-0.5 rounded-full bg-stone-200 dark:bg-stone-700 text-stone-800 dark:text-stone-200 text-[11px] font-mono">
+                {displayedList.length} سجلات
+              </span>
+            </h4>
+            <span className="text-[11px] text-stone-500 dark:text-stone-400">
+              تنسيق رسمي معتمد لمتابعة السيد المدير ومسؤول الذاتية
+            </span>
+          </div>
+
+          <div className="relative w-full sm:w-60">
+            <Search className="w-3.5 h-3.5 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="بحث في هذا الباب..."
+              value={reportSearch}
+              onChange={(e) => setReportSearch(e.target.value)}
+              className="w-full pr-8 pl-3 py-1.5 text-xs rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden focus:ring-1 focus:ring-amber-500"
+            />
+          </div>
         </div>
 
         {displayedList.length === 0 ? (
-          <div className="p-8 text-center text-xs text-stone-400">
-            لا توجد معاملات مسجلة في هذا الباب لشهر {selectedMonth}
+          <div className="p-10 text-center text-xs text-stone-400 dark:text-stone-500 space-y-2">
+            <p className="font-semibold text-stone-600 dark:text-stone-300">
+              لا توجد معاملات مسجلة في هذا الباب للفترة المحددة
+            </p>
+            <p className="text-[11px]">
+              عند إضافة أو تعديل أي معاملة وتحديد هذا القسم ستظهر هنا فوراً وتلقائياً.
+            </p>
           </div>
         ) : (
-          <div className="divide-y divide-stone-100">
+          <div className="divide-y divide-stone-100 dark:divide-stone-800">
             {displayedList.map((tr) => (
               <div
                 key={tr.id}
                 onClick={() => onSelectTransaction(tr)}
-                className="p-4 hover:bg-amber-50/50 transition-colors flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 cursor-pointer"
+                className="p-4 hover:bg-amber-50/40 dark:hover:bg-stone-800/60 transition-colors flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 cursor-pointer group"
               >
-                <div className="space-y-1 max-w-xl">
+                <div className="space-y-1.5 max-w-2xl">
                   <div className="flex items-center gap-2 flex-wrap text-xs">
-                    <span className="font-bold font-mono text-stone-900 bg-stone-100 px-2 py-0.5 rounded">
+                    {/* Transaction Number */}
+                    <span className="font-bold font-mono text-stone-900 dark:text-stone-100 bg-stone-100 dark:bg-stone-800 group-hover:bg-amber-100 dark:group-hover:bg-amber-950 px-2 py-0.5 rounded text-[11px] border border-stone-200 dark:border-stone-700">
                       العدد: {tr.number}
                     </span>
-                    <span className="text-stone-400">ت: {tr.sequence}</span>
-                    <span className="text-stone-400">• {tr.date}</span>
-                    <span className="px-2 py-0.5 rounded-full bg-stone-100 text-stone-700 font-medium text-[10px]">
+
+                    {/* Sequence */}
+                    <span className="text-stone-400 dark:text-stone-500 text-[11px]">
+                      ت: {tr.sequence}
+                    </span>
+
+                    {/* Date */}
+                    <span className="text-stone-500 dark:text-stone-400 text-[11px]">
+                      • {tr.date}
+                    </span>
+
+                    {/* Category Tag */}
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800/60">
+                      القسم: {tr.category}
+                    </span>
+
+                    {/* Direction Tag */}
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300">
+                      {tr.direction}
+                    </span>
+
+                    {/* SubType */}
+                    <span className="px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 font-medium text-[10px]">
                       {tr.subType}
                     </span>
-                    <span className="text-stone-500 font-medium">
+
+                    {/* Entity */}
+                    <span className="text-stone-500 dark:text-stone-400 font-medium text-[11px]">
                       إلى/من: {tr.entity}
                     </span>
+
+                    {/* Attachments indicator */}
+                    {tr.attachments && tr.attachments.length > 0 && (
+                      <span className="px-1.5 py-0.2 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10px] font-bold border border-blue-200 dark:border-blue-800/60">
+                        📎 {tr.attachments.length} مرفقات
+                      </span>
+                    )}
                   </div>
 
-                  <p className="text-xs sm:text-sm font-semibold text-stone-800">
+                  <p className="text-xs sm:text-sm font-semibold text-stone-800 dark:text-stone-200 leading-relaxed">
                     {tr.subject}
                   </p>
 
                   {tr.employeeName && (
-                    <p className="text-[11px] text-emerald-700">
-                      المنتسب المعني: {tr.employeeName}
+                    <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1">
+                      <Users className="w-3.5 h-3.5" />
+                      <span>المنتسب المعني: <strong>{tr.employeeName}</strong></span>
                     </p>
                   )}
                 </div>
 
                 <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
                   <span
-                    className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${
+                    className={`text-xs px-2.5 py-1 rounded-full font-semibold border whitespace-nowrap ${
                       tr.status === 'جديد'
-                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                        ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
                         : tr.status === 'قيد الإنجاز'
-                        ? 'bg-amber-50 text-amber-800 border-amber-200'
-                        : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                        : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
                     }`}
                   >
                     {tr.status}
@@ -316,7 +541,8 @@ export const MonthlyReportView: React.FC<MonthlyReportViewProps> = ({
                       e.stopPropagation();
                       onSelectTransaction(tr);
                     }}
-                    className="p-1.5 rounded-lg border border-stone-200 text-stone-600 hover:bg-stone-900 hover:text-white transition-colors"
+                    className="p-1.5 rounded-lg border border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-300 hover:bg-stone-900 hover:text-white dark:hover:bg-amber-400 dark:hover:text-stone-950 transition-colors"
+                    title="معاينة تفاصيل ومرفقات المعاملة"
                   >
                     <Eye className="w-4 h-4" />
                   </button>
