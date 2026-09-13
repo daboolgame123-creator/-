@@ -25,8 +25,8 @@ import {
   AttachmentType,
   DailySituationData,
   DailySituationEntry 
-} from '../types';
-import { processUploadedFile } from '../utils/attachmentUtils';
+} from '../../types';
+import { processUploadedFile } from '../../utils/attachmentUtils';
 
 interface NewTransactionModalProps {
   isOpen: boolean;

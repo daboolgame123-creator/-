@@ -30,8 +30,8 @@ import {
   TransactionPriority,
   Attachment,
   AttachmentType
-} from '../types';
-import { processUploadedFile, getAttachmentPreviewUrl } from '../utils/attachmentUtils';
+} from '../../types';
+import { processUploadedFile, getAttachmentPreviewUrl } from '../../utils/attachmentUtils';
 
 interface ArchivistEditorModalProps {
   isOpen: boolean;

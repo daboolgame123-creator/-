@@ -25,13 +25,13 @@ import {
   Award,
   Sparkles
 } from 'lucide-react';
-import { Employee, Transaction, UserRole, NavigationTarget, EmployeeCategory } from '../types';
+import { Employee, Transaction, UserRole, NavigationTarget, EmployeeCategory } from '../../types';
 import { 
   splitEmployeeNames, 
   isEmployeeMatch, 
   isEmployeeInTransaction, 
   determineEmployeeCategory 
-} from '../utils/employeeUtils';
+} from '../../utils/employeeUtils';
 
 interface EmployeesViewProps {
   employees: Employee[];

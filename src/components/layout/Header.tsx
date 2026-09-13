@@ -16,7 +16,7 @@ import {
   Sun,
   CalendarCheck2
 } from 'lucide-react';
-import { Transaction, UserRole } from '../types';
+import { Transaction, UserRole } from '../../types';
 
 interface HeaderProps {
   currentView: 'transactions' | 'daily-situations' | 'report' | 'employees' | 'archivist-studio';

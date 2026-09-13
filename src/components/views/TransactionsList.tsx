@@ -23,8 +23,8 @@ import {
   Trash2,
   AlertTriangle
 } from 'lucide-react';
-import { Transaction, TransactionStatus, TransactionCategory, TransactionDirection, TransactionPriority, UserRole, NavigationTarget } from '../types';
-import { splitEmployeeNames } from '../utils/employeeUtils';
+import { Transaction, TransactionStatus, TransactionCategory, TransactionDirection, TransactionPriority, UserRole, NavigationTarget } from '../../types';
+import { splitEmployeeNames } from '../../utils/employeeUtils';
 
 interface TransactionsListProps {
   transactions: Transaction[];

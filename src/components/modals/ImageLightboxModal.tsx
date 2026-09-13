@@ -9,8 +9,8 @@ import {
   Share2,
   Printer
 } from 'lucide-react';
-import { Attachment } from '../types';
-import { getAttachmentPreviewUrl } from '../utils/attachmentUtils';
+import { Attachment } from '../../types';
+import { getAttachmentPreviewUrl } from '../../utils/attachmentUtils';
 
 interface ImageLightboxModalProps {
   attachment: Attachment | null;

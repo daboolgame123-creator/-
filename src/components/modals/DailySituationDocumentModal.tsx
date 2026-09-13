@@ -1,6 +1,6 @@
 import React from 'react';
 import { X, Printer, Download, Paperclip, Calendar, CheckCircle, Eye, Share2 } from 'lucide-react';
-import { Transaction, DailySituationData } from '../types';
+import { Transaction, DailySituationData } from '../../types';
 
 interface DailySituationDocumentModalProps {
   transaction: Transaction | null;

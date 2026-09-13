@@ -34,8 +34,8 @@ import {
   Attachment,
   AttachmentType,
   Employee
-} from '../types';
-import { processUploadedFile, getAttachmentPreviewUrl } from '../utils/attachmentUtils';
+} from '../../types';
+import { processUploadedFile, getAttachmentPreviewUrl } from '../../utils/attachmentUtils';
 
 interface ArchivistStudioViewProps {
   transactions: Transaction[];

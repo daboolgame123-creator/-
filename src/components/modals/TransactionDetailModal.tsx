@@ -24,8 +24,8 @@ import {
   UploadCloud,
   CheckCheck
 } from 'lucide-react';
-import { Transaction, TransactionStatus, Attachment, AttachmentType } from '../types';
-import { processUploadedFile, getAttachmentPreviewUrl } from '../utils/attachmentUtils';
+import { Transaction, TransactionStatus, Attachment, AttachmentType } from '../../types';
+import { processUploadedFile, getAttachmentPreviewUrl } from '../../utils/attachmentUtils';
 import { ImageLightboxModal } from './ImageLightboxModal';
 
 interface TransactionDetailModalProps {
@@ -232,41 +232,41 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
       />
 
       <div 
-        className="bg-white rounded-2xl max-w-5xl w-full max-h-[94vh] flex flex-col shadow-2xl border border-stone-200 overflow-hidden"
+        className="bg-white dark:bg-stone-900 rounded-2xl max-w-5xl w-full max-h-[94vh] flex flex-col shadow-2xl border border-stone-200 dark:border-stone-800 overflow-hidden"
         dir="rtl"
       >
         {/* Modal Top Header */}
-        <div className="p-4 sm:p-5 border-b border-stone-200 bg-stone-50 flex items-start justify-between gap-4">
+        <div className="p-4 sm:p-5 border-b border-stone-200 dark:border-stone-800 bg-stone-50 dark:bg-stone-800/80 flex items-start justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-bold px-2 py-0.5 rounded bg-stone-900 text-amber-300">
                 العدد: {transaction.number}
               </span>
-              <span className="text-xs font-medium px-2 py-0.5 rounded bg-stone-200 text-stone-700">
+              <span className="text-xs font-medium px-2 py-0.5 rounded bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300">
                 التسلسل: {transaction.sequence}
               </span>
-              <span className="text-xs font-medium px-2 py-0.5 rounded bg-blue-50 text-blue-800 border border-blue-200">
+              <span className="text-xs font-medium px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
                 {transaction.direction}
               </span>
-              <span className="text-xs font-medium px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200">
+              <span className="text-xs font-medium px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
                 قسم {transaction.category}
               </span>
-              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-stone-100 text-stone-800">
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-stone-200">
                 نوع: {transaction.subType}
               </span>
               {transaction.priority && transaction.priority !== 'عادي' && (
                 <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${
                   transaction.priority === 'عاجل جداً'
-                    ? 'bg-rose-100 text-rose-800 border-rose-300 animate-pulse'
+                    ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800 animate-pulse'
                     : transaction.priority === 'هام'
-                    ? 'bg-amber-100 text-amber-900 border-amber-300'
-                    : 'bg-purple-100 text-purple-900 border-purple-300'
+                    ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                    : 'bg-purple-100 dark:bg-purple-950/60 text-purple-900 dark:text-purple-300 border-purple-300 dark:border-purple-800'
                 }`}>
                   {transaction.priority === 'عاجل جداً' ? '🚨 عاجل جداً' : transaction.priority === 'هام' ? '⚠️ هام' : '🔒 سري وخاص'}
                 </span>
               )}
             </div>
-            <h2 className="text-base sm:text-xl font-bold text-stone-900 mt-1">
+            <h2 className="text-base sm:text-xl font-bold text-stone-900 dark:text-stone-100 mt-1">
               {transaction.subject}
             </h2>
           </div>
@@ -274,7 +274,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-stone-100 hover:bg-rose-600 hover:text-white text-stone-800 text-xs font-bold border border-stone-300 transition-all cursor-pointer shadow-2xs active:scale-95 shrink-0"
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-stone-100 dark:bg-stone-800 hover:bg-rose-600 hover:text-white dark:hover:bg-rose-600 dark:hover:text-white text-stone-800 dark:text-stone-200 text-xs font-bold border border-stone-300 dark:border-stone-700 transition-all cursor-pointer shadow-2xs active:scale-95 shrink-0"
             title="إغلاق النافذة والعودة للسجل (Esc)"
           >
             <X className="w-4 h-4 stroke-[2.5]" />
@@ -283,18 +283,18 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
         </div>
 
         {/* Read Notification & Direct Access Feedback Banner - تم الاطلاع على الكتاب وقراءته وتحتها */}
-        <div className="bg-emerald-50/95 border-b border-emerald-200 px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-inner">
+        <div className="bg-emerald-50/95 dark:bg-emerald-950/40 border-b border-emerald-200 dark:border-emerald-900/60 px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-inner">
           <div className="flex items-center gap-2.5 flex-wrap">
-            <span className="inline-flex items-center gap-1.5 font-bold text-emerald-900 bg-emerald-100 px-3 py-1 rounded-full border border-emerald-300 shadow-2xs text-xs sm:text-sm">
-              <CheckCircle2 className="w-4 h-4 text-emerald-700" />
+            <span className="inline-flex items-center gap-1.5 font-bold text-emerald-900 dark:text-emerald-200 bg-emerald-100 dark:bg-emerald-900/60 px-3 py-1 rounded-full border border-emerald-300 dark:border-emerald-700 shadow-2xs text-xs sm:text-sm">
+              <CheckCircle2 className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />
               <span>تم الاطلاع على الكتاب وقراءته ✓</span>
             </span>
             {transaction.readAt && (
-              <span className="text-emerald-800 font-semibold bg-white/70 px-2.5 py-0.5 rounded border border-emerald-200/60 text-xs">
+              <span className="text-emerald-800 dark:text-emerald-300 font-semibold bg-white/70 dark:bg-stone-900/70 px-2.5 py-0.5 rounded border border-emerald-200/60 dark:border-emerald-800/60 text-xs">
                 توقيت الاطلاع: {transaction.readAt}
               </span>
             )}
-            <span className="text-stone-600 font-medium text-[11px] hidden sm:inline">
+            <span className="text-stone-600 dark:text-stone-400 font-medium text-[11px] hidden sm:inline">
               (كافة تفاصيل الكتاب، الأقسام، والمرفقات مدرجة أدناه)
             </span>
           </div>
@@ -303,7 +303,7 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
             <button
               type="button"
               onClick={onToggleReadStatus}
-              className="text-[11px] text-stone-600 hover:text-rose-700 font-semibold underline cursor-pointer"
+              className="text-[11px] text-stone-600 dark:text-stone-400 hover:text-rose-700 dark:hover:text-rose-400 font-semibold underline cursor-pointer"
               title="إذا أردت ترك الكتاب كغير مقروء لمراجعته لاحقاً"
             >
               {transaction.isRead ? 'إعادة تعيين كـ «غير مقروء 🔴»' : 'تحديد كـ «مقروء ✓»'}
@@ -316,18 +316,18 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
           {/* Left Column: Transaction Metadata & Status */}
           <div className="lg:col-span-6 space-y-4">
             {/* Status Control Box */}
-            <div className="p-3.5 rounded-xl bg-stone-50 border border-stone-200 space-y-2">
-              <span className="text-xs font-bold text-stone-500 uppercase tracking-wider block">
+            <div className="p-3.5 rounded-xl bg-stone-50 dark:bg-stone-800/60 border border-stone-200 dark:border-stone-700 space-y-2">
+              <span className="text-xs font-bold text-stone-500 dark:text-stone-400 uppercase tracking-wider block">
                 متابعة حالة المعاملة
               </span>
               <div className="grid grid-cols-3 gap-2">
                 {(['جديد', 'قيد الإنجاز', 'مكتمل'] as TransactionStatus[]).map((status) => {
                   const isActive = transaction.status === status;
-                  let colorClasses = 'border-stone-200 bg-white text-stone-700 hover:border-stone-300';
+                  let colorClasses = 'border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:border-stone-300 dark:hover:border-stone-600';
                   if (isActive) {
-                    if (status === 'جديد') colorClasses = 'border-blue-500 bg-blue-50 text-blue-900 font-bold ring-1 ring-blue-400';
-                    if (status === 'قيد الإنجاز') colorClasses = 'border-amber-500 bg-amber-50 text-amber-900 font-bold ring-1 ring-amber-400';
-                    if (status === 'مكتمل') colorClasses = 'border-emerald-500 bg-emerald-50 text-emerald-900 font-bold ring-1 ring-emerald-400';
+                    if (status === 'جديد') colorClasses = 'border-blue-500 bg-blue-50 dark:bg-blue-950/60 text-blue-900 dark:text-blue-300 font-bold ring-1 ring-blue-400';
+                    if (status === 'قيد الإنجاز') colorClasses = 'border-amber-500 bg-amber-50 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 font-bold ring-1 ring-amber-400';
+                    if (status === 'مكتمل') colorClasses = 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-300 font-bold ring-1 ring-emerald-400';
                   }
 
                   return (
@@ -349,67 +349,78 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
 
             {/* Core Details Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs sm:text-sm">
-              <div className="p-3 rounded-lg border border-stone-200 bg-white space-y-1">
-                <span className="text-xs font-semibold text-stone-400 flex items-center gap-1">
-                  <Calendar className="w-3.5 h-3.5 text-stone-500" /> تاريخ الكتاب
+              <div className="p-3 rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 space-y-1">
+                <span className="text-xs font-semibold text-stone-400 dark:text-stone-400 flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" /> تاريخ الكتاب
                 </span>
-                <p className="font-semibold text-stone-800">{transaction.date}</p>
-                <span className="text-[11px] text-stone-400">تابع لتقرير شهر {transaction.month}</span>
+                <p className="font-semibold text-stone-800 dark:text-stone-200">{transaction.date}</p>
+                <span className="text-[11px] text-stone-400 dark:text-stone-500">تابع لتقرير شهر {transaction.month}</span>
               </div>
 
-              <div className="p-3 rounded-lg border border-stone-200 bg-white space-y-1">
-                <span className="text-xs font-semibold text-stone-400 flex items-center gap-1">
-                  <Building2 className="w-3.5 h-3.5 text-stone-500" /> الجهة المرتبطة
+              <div className="p-3 rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 space-y-1">
+                <span className="text-xs font-semibold text-stone-400 dark:text-stone-400 flex items-center gap-1">
+                  <Building2 className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" /> الجهة المرتبطة
                 </span>
-                <p className="font-semibold text-stone-800">{transaction.entity}</p>
+                <p className="font-semibold text-stone-800 dark:text-stone-200">{transaction.entity}</p>
               </div>
 
               {transaction.employeeName && (
-                <div className="p-3 rounded-lg border border-emerald-200 bg-emerald-50/50 space-y-1 sm:col-span-2">
-                  <span className="text-xs font-semibold text-emerald-700 flex items-center gap-1">
-                    <User className="w-3.5 h-3.5 text-emerald-600" /> المنتسب المرتبط بالمعاملة
+                <div className="p-3 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/40 space-y-1 sm:col-span-2">
+                  <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                    <User className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> المنتسب المرتبط بالمعاملة
                   </span>
-                  <p className="font-bold text-stone-900">{transaction.employeeName}</p>
+                  <p className="font-bold text-stone-900 dark:text-stone-100">{transaction.employeeName}</p>
+                </div>
+              )}
+
+              {transaction.isDailySituation && transaction.dailySituationData && (
+                <div className="p-3 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50/80 dark:bg-amber-950/40 space-y-1 sm:col-span-2">
+                  <span className="text-xs font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1">
+                    📋 هذا السجل يمثل استمارة موقف يومي معتمد
+                  </span>
+                  <p className="text-xs text-amber-800 dark:text-amber-200">
+                    العدد الكلي للكادر: {transaction.dailySituationData.totalStaff} • الحضور الفعلي: {transaction.dailySituationData.presentCount} • المجازين: {transaction.dailySituationData.leaveCount} • الإيفادات: {transaction.dailySituationData.deputationCount}
+                  </p>
                 </div>
               )}
             </div>
 
             {/* Specific Dynamic Details (If Any) */}
             {transaction.specificDetails && Object.keys(transaction.specificDetails).length > 0 && (
-              <div className="p-3.5 rounded-xl border border-stone-200 bg-stone-50/70 space-y-2">
-                <span className="text-xs font-bold text-stone-600 flex items-center gap-1.5">
-                  <Layers className="w-3.5 h-3.5 text-stone-500" />
+              <div className="p-3.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50/70 dark:bg-stone-800/60 space-y-2">
+                <span className="text-xs font-bold text-stone-600 dark:text-stone-300 flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
                   بيانات تفصيلية خاصة بنوع ({transaction.subType}):
                 </span>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   {transaction.specificDetails.destination && (
                     <div>
-                      <span className="text-stone-400 block">وجهة الإيفاد:</span>
-                      <span className="font-semibold text-stone-800">{transaction.specificDetails.destination}</span>
+                      <span className="text-stone-400 dark:text-stone-500 block">وجهة الإيفاد:</span>
+                      <span className="font-semibold text-stone-800 dark:text-stone-200">{transaction.specificDetails.destination}</span>
                     </div>
                   )}
                   {transaction.specificDetails.vehicle && (
                     <div>
-                      <span className="text-stone-400 block">العجلة المخصصة:</span>
-                      <span className="font-semibold text-stone-800">{transaction.specificDetails.vehicle}</span>
+                      <span className="text-stone-400 dark:text-stone-500 block">العجلة المخصصة:</span>
+                      <span className="font-semibold text-stone-800 dark:text-stone-200">{transaction.specificDetails.vehicle}</span>
                     </div>
                   )}
                   {transaction.specificDetails.purpose && (
                     <div className="col-span-2">
-                      <span className="text-stone-400 block">الغرض:</span>
-                      <span className="font-semibold text-stone-800">{transaction.specificDetails.purpose}</span>
+                      <span className="text-stone-400 dark:text-stone-500 block">الغرض:</span>
+                      <span className="font-semibold text-stone-800 dark:text-stone-200">{transaction.specificDetails.purpose}</span>
                     </div>
                   )}
                   {transaction.specificDetails.amount && (
                     <div>
-                      <span className="text-stone-400 block">المبلغ المالي:</span>
-                      <span className="font-semibold text-emerald-700">{transaction.specificDetails.amount}</span>
+                      <span className="text-stone-400 dark:text-stone-500 block">المبلغ المالي:</span>
+                      <span className="font-semibold text-emerald-700 dark:text-emerald-400">{transaction.specificDetails.amount}</span>
                     </div>
                   )}
                   {transaction.specificDetails.leaveDays && (
                     <div>
-                      <span className="text-stone-400 block">عدد أيام الإجازة:</span>
-                      <span className="font-semibold text-stone-800">{transaction.specificDetails.leaveDays} أيام ({transaction.specificDetails.leaveType})</span>
+                      <span className="text-stone-400 dark:text-stone-500 block">عدد أيام الإجازة:</span>
+                      <span className="font-semibold text-stone-800 dark:text-stone-200">{transaction.specificDetails.leaveDays} أيام ({transaction.specificDetails.leaveType})</span>
                     </div>
                   )}
                 </div>
@@ -418,23 +429,23 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
 
             {/* Director's Directive / هامش المدير (إن وجد) */}
             {transaction.directorDirective && (
-              <div className="p-3.5 rounded-xl border-2 border-amber-300 bg-linear-to-br from-amber-50 to-orange-50/60 space-y-2 shadow-xs">
+              <div className="p-3.5 rounded-xl border-2 border-amber-300 dark:border-amber-700 bg-linear-to-br from-amber-50 to-orange-50/60 dark:from-amber-950/30 dark:to-orange-950/20 space-y-2 shadow-xs">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-amber-900 dark:text-amber-300 flex items-center gap-1.5">
                     <span className="text-sm">✍️</span>
                     هامش وتوجيه السيد المدير
                   </span>
                   {transaction.directorDirective.date && (
-                    <span className="text-[11px] font-semibold text-amber-800/80 bg-amber-100/70 px-2 py-0.5 rounded">
+                    <span className="text-[11px] font-semibold text-amber-800/80 dark:text-amber-300/80 bg-amber-100/70 dark:bg-amber-900/60 px-2 py-0.5 rounded">
                       {transaction.directorDirective.date}
                     </span>
                   )}
                 </div>
-                <p className="text-xs sm:text-sm font-semibold text-amber-950 leading-relaxed bg-white/80 p-2.5 rounded-lg border border-amber-200">
+                <p className="text-xs sm:text-sm font-semibold text-amber-950 dark:text-amber-200 leading-relaxed bg-white/80 dark:bg-stone-900/80 p-2.5 rounded-lg border border-amber-200 dark:border-amber-800">
                   «{transaction.directorDirective.text}»
                 </p>
                 {transaction.directorDirective.actionRequired && (
-                  <span className="inline-block text-[11px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full border border-rose-200">
+                  <span className="inline-block text-[11px] font-bold text-rose-700 dark:text-rose-400 bg-rose-100 dark:bg-rose-950/60 px-2 py-0.5 rounded-full border border-rose-200 dark:border-rose-800">
                     مطلوب إجراء فوري ومتابعة من شعبة الذاتية
                   </span>
                 )}
@@ -442,9 +453,9 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
             )}
 
             {/* Notes */}
-            <div className="p-3.5 rounded-xl border border-stone-200 bg-white space-y-1.5">
-              <span className="text-xs font-bold text-stone-500 block">ملاحظات الذاتية والمتابعة:</span>
-              <p className="text-xs text-stone-700 leading-relaxed bg-stone-50 p-2.5 rounded-lg border border-stone-100">
+            <div className="p-3.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 space-y-1.5">
+              <span className="text-xs font-bold text-stone-500 dark:text-stone-400 block">ملاحظات الذاتية والمتابعة:</span>
+              <p className="text-xs text-stone-700 dark:text-stone-300 leading-relaxed bg-stone-50 dark:bg-stone-900/60 p-2.5 rounded-lg border border-stone-100 dark:border-stone-800">
                 {transaction.notes || 'لا توجد ملاحظات مسجلة لهذه المعاملة.'}
               </p>
             </div>
@@ -453,10 +464,10 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
           {/* Right Column: Scanned Attachments & Photo Editor */}
           <div className="lg:col-span-6 space-y-3 flex flex-col">
             {/* Attachments Section Header with Add Photo Button */}
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 pb-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-stone-200 dark:border-stone-700 pb-2">
               <div className="flex items-center gap-1.5">
-                <Paperclip className="w-4 h-4 text-amber-600" />
-                <span className="text-xs sm:text-sm font-bold text-stone-900">
+                <Paperclip className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                <span className="text-xs sm:text-sm font-bold text-stone-900 dark:text-stone-100">
                   المرفقات والصور الممسوحة ({attachments.length})
                 </span>
               </div>
@@ -697,14 +708,14 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="p-3.5 sm:p-4 border-t border-stone-200 bg-stone-50 flex items-center justify-between">
-          <span className="text-xs text-stone-500">
+        <div className="p-3.5 sm:p-4 border-t border-stone-200 dark:border-stone-800 bg-stone-50 dark:bg-stone-800/80 flex items-center justify-between">
+          <span className="text-xs text-stone-500 dark:text-stone-400">
             تاريخ التوثيق: {transaction.date} • التسلسل الإداري: #{transaction.sequence}
           </span>
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-stone-900 hover:bg-rose-700 text-white text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95"
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-stone-900 dark:bg-stone-800 hover:bg-rose-700 dark:hover:bg-rose-700 text-white text-xs font-bold transition-all cursor-pointer shadow-xs active:scale-95 border border-transparent dark:border-stone-700"
           >
             <X className="w-4 h-4" />
             <span>خروج والعودة لسجل المعاملات</span>

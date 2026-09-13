@@ -1,14 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Header } from './components/Header';
-import { TransactionsList } from './components/TransactionsList';
-import { MonthlyReportView } from './components/MonthlyReportView';
-import { EmployeesView } from './components/EmployeesView';
-import { DailySituationsView } from './components/DailySituationsView';
-import { TransactionDetailModal } from './components/TransactionDetailModal';
-import { NewTransactionModal } from './components/NewTransactionModal';
-import { ImageLightboxModal } from './components/ImageLightboxModal';
-import { ArchivistStudioView } from './components/ArchivistStudioView';
-import { ArchivistEditorModal } from './components/ArchivistEditorModal';
+import { Header } from './components/layout';
+import { 
+  TransactionsList, 
+  MonthlyReportView, 
+  EmployeesView, 
+  DailySituationsView, 
+  ArchivistStudioView 
+} from './components/views';
+import { 
+  TransactionDetailModal, 
+  NewTransactionModal, 
+  ImageLightboxModal, 
+  ArchivistEditorModal 
+} from './components/modals';
 import { INITIAL_TRANSACTIONS, INITIAL_EMPLOYEES } from './data/mockData';
 import { Transaction, TransactionStatus, Employee, UserRole, Attachment, NavigationTarget } from './types';
 import { splitEmployeeNames, isEntityOrDepartmentName, determineEmployeeCategory, isEmployeeMatch } from './utils/employeeUtils';
@@ -111,6 +115,7 @@ export default function App() {
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
+  const [newModalDefaultMode, setNewModalDefaultMode] = useState<'normal' | 'daily-situation'>('normal');
   const [directAttachmentView, setDirectAttachmentView] = useState<{
     transaction: Transaction;
     attachmentIndex: number;
@@ -459,7 +464,10 @@ export default function App() {
       <Header
         currentView={currentView}
         setCurrentView={setCurrentView}
-        onOpenNewModal={() => setIsNewModalOpen(true)}
+        onOpenNewModal={() => {
+          setNewModalDefaultMode('normal');
+          setIsNewModalOpen(true);
+        }}
         transactions={transactions}
         userRole={userRole}
         setUserRole={setUserRole}
@@ -478,7 +486,10 @@ export default function App() {
             onToggleReadStatus={handleToggleReadStatus}
             onMarkAllAsRead={handleMarkAllAsRead}
             onUpdateStatus={handleUpdateStatus}
-            onOpenNewModal={() => setIsNewModalOpen(true)}
+            onOpenNewModal={() => {
+              setNewModalDefaultMode('normal');
+              setIsNewModalOpen(true);
+            }}
             userRole={userRole}
             onViewAttachmentDirectly={handleViewAttachmentDirectly}
             onSaveDirective={handleSaveDirective}
@@ -494,7 +505,10 @@ export default function App() {
           <DailySituationsView
             transactions={transactions}
             onSelectTransaction={handleSelectTransaction}
-            onOpenNewDailySituation={() => setIsNewModalOpen(true)}
+            onOpenNewDailySituation={() => {
+              setNewModalDefaultMode('daily-situation');
+              setIsNewModalOpen(true);
+            }}
             onEditTransaction={(tr) => setEditingTransaction(tr)}
             onDeleteTransaction={handleDeleteTransaction}
             onViewAttachment={handleViewAttachmentDirectly}
@@ -509,7 +523,10 @@ export default function App() {
             employees={employees}
             onSaveTransaction={handleSaveTransaction}
             onDeleteTransaction={handleDeleteTransaction}
-            onOpenNewModal={() => setIsNewModalOpen(true)}
+            onOpenNewModal={() => {
+              setNewModalDefaultMode('normal');
+              setIsNewModalOpen(true);
+            }}
             onViewAttachmentDirectly={handleViewAttachmentDirectly}
           />
         )}
@@ -577,6 +594,7 @@ export default function App() {
           onClose={() => setIsNewModalOpen(false)}
           onAddTransaction={handleAddTransaction}
           employees={employees.map((e) => e.name)}
+          defaultMode={newModalDefaultMode}
         />
       )}
 

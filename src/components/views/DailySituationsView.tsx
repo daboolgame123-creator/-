@@ -23,8 +23,8 @@ import {
   ChevronRight,
   CalendarCheck2
 } from 'lucide-react';
-import { Transaction, DailySituationData, DailySituationEntry, NavigationTarget } from '../types';
-import { DailySituationDocumentModal } from './DailySituationDocumentModal';
+import { Transaction, DailySituationData, DailySituationEntry, NavigationTarget } from '../../types';
+import { DailySituationDocumentModal } from '../modals/DailySituationDocumentModal';
 
 interface DailySituationsViewProps {
   transactions: Transaction[];

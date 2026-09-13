@@ -17,8 +17,8 @@ import {
   Layers,
   HelpCircle
 } from 'lucide-react';
-import { Transaction, NavigationTarget } from '../types';
-import { splitEmployeeNames } from '../utils/employeeUtils';
+import { Transaction, NavigationTarget } from '../../types';
+import { splitEmployeeNames } from '../../utils/employeeUtils';
 
 interface MonthlyReportViewProps {
   transactions: Transaction[];
