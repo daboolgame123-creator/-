@@ -17,9 +17,21 @@ import {
   Check,
   Edit3,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  GraduationCap,
+  BookOpen,
+  ArrowRight,
+  ExternalLink,
+  Award,
+  Sparkles
 } from 'lucide-react';
-import { Employee, Transaction, UserRole } from '../types';
+import { Employee, Transaction, UserRole, NavigationTarget, EmployeeCategory } from '../types';
+import { 
+  splitEmployeeNames, 
+  isEmployeeMatch, 
+  isEmployeeInTransaction, 
+  determineEmployeeCategory 
+} from '../utils/employeeUtils';
 
 interface EmployeesViewProps {
   employees: Employee[];
@@ -29,50 +41,11 @@ interface EmployeesViewProps {
   onUpdateEmployee?: (updatedEmp: Employee, oldName?: string) => void;
   onDeleteEmployee?: (empId: string) => void;
   userRole?: UserRole;
+  onNavigate?: (target: NavigationTarget) => void;
+  navigationTarget?: NavigationTarget | null;
+  onViewAttachmentDirectly?: (transaction: Transaction, attachmentIndex: number) => void;
+  onSaveTransaction?: (updatedTr: Transaction) => void;
 }
-
-// Helper to reliably match an employee name in a transaction with an employee record
-export const isEmployeeMatch = (tEmpName?: string, empName?: string): boolean => {
-  if (!tEmpName || !empName) return false;
-  const clean = (str: string) =>
-    str
-      .trim()
-      .toLowerCase()
-      .replace(/^(د\.?|م\.?|السيد|السيدة|المهندس|المهندسة|الأستاذ|الأستاذة)\s+/g, '')
-      .replace(/[إأآا]/g, 'ا')
-      .replace(/ى/g, 'ي')
-      .replace(/ة/g, 'ه')
-      .replace(/[\(\)\[\]\{\}]/g, '')
-      .replace(/\s+/g, ' ');
-
-  const tClean = clean(tEmpName);
-  const eClean = clean(empName);
-
-  if (tClean === eClean) return true;
-
-  const tWords = tClean.split(' ').filter(Boolean);
-  const eWords = eClean.split(' ').filter(Boolean);
-
-  if (tWords.length === 0 || eWords.length === 0) return false;
-
-  // Exact full word sequence match
-  if (tWords.join(' ') === eWords.join(' ')) return true;
-
-  // If both have at least 2 words: require words 0 and 1 to match
-  if (tWords.length >= 2 && eWords.length >= 2) {
-    if (tWords[0] === eWords[0] && tWords[1] === eWords[1]) {
-      // If both have 3rd word, they MUST also match
-      if (tWords.length >= 3 && eWords.length >= 3) {
-        return tWords[2] === eWords[2];
-      }
-      return true;
-    }
-    return false;
-  }
-
-  // If only 1 word each, only match if identical
-  return tWords.length === 1 && eWords.length === 1 && tWords[0] === eWords[0];
-};
 
 export const EmployeesView: React.FC<EmployeesViewProps> = ({
   employees,
@@ -82,9 +55,17 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   onUpdateEmployee,
   onDeleteEmployee,
   userRole = 'director',
+  onNavigate,
+  navigationTarget,
+  onViewAttachmentDirectly,
+  onSaveTransaction,
 }) => {
-  // Main view mode: Individual Dossiers or Complete Personnel Department Register
+  // Main view mode: Individual Dossiers vs Complete Personnel Department Register
   const [activeTab, setActiveTab] = useState<'individual' | 'all-transactions'>('individual');
+  
+  // Category Tab: 'منتسب' (Staff/Admin) vs 'باحث' (Researchers/Professors)
+  const [categoryTab, setCategoryTab] = useState<EmployeeCategory>('منتسب');
+  
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
   const [searchEmp, setSearchEmp] = useState('');
   const [searchTransactions, setSearchTransactions] = useState('');
@@ -95,6 +76,9 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   const [newTitle, setNewTitle] = useState('');
   const [newDept, setNewDept] = useState('شعبة الذاتية والإدارية');
   const [newBadge, setNewBadge] = useState('');
+  const [newCategory, setNewCategory] = useState<EmployeeCategory>('منتسب');
+  const [newAcademicDegree, setNewAcademicDegree] = useState('');
+  const [newSpecialization, setNewSpecialization] = useState('');
 
   // Edit Employee State
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
@@ -102,299 +86,440 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   const [editTitle, setEditTitle] = useState('');
   const [editDept, setEditDept] = useState('');
   const [editBadge, setEditBadge] = useState('');
+  const [editCategory, setEditCategory] = useState<EmployeeCategory>('منتسب');
+  const [editAcademicDegree, setEditAcademicDegree] = useState('');
+  const [editSpecialization, setEditSpecialization] = useState('');
 
   // Delete Confirmation State
   const [deleteConfirmEmployee, setDeleteConfirmEmployee] = useState<Employee | null>(null);
 
-  // 1. All transactions belonging to Personnel Department (category === 'منتسبين' OR has employeeName)
-  const personnelTransactions = useMemo(() => {
-    return transactions.filter(
-      (t) => t.category === 'منتسبين' || Boolean(t.employeeName && t.employeeName.trim())
-    );
-  }, [transactions]);
+  // Split into Staff (المنتسبون) and Researchers (الباحثون والأساتذة)
+  const staffEmployees = useMemo(() => {
+    return employees.filter((e) => determineEmployeeCategory(e) === 'منتسب');
+  }, [employees]);
 
-  // 2. Dynamic combined employees list:
-  // Combines registered employees + ANY employee from transactions or personnel category
-  const allEmployees = useMemo(() => {
-    const list: Employee[] = [...employees];
+  const researcherEmployees = useMemo(() => {
+    return employees.filter((e) => determineEmployeeCategory(e) === 'باحث');
+  }, [employees]);
 
-    transactions.forEach((tr) => {
-      const nameToTrack =
-        tr.employeeName?.trim() ||
-        (tr.category === 'منتسبين' && tr.entity && !['عام', 'عام / غير محدد', 'الذاتية'].includes(tr.entity.trim())
-          ? tr.entity.trim()
-          : null);
-
-      if (nameToTrack) {
-        const exists = list.some((emp) => isEmployeeMatch(nameToTrack, emp.name));
-
-        if (!exists) {
-          list.push({
-            id: `emp-auto-${encodeURIComponent(nameToTrack.replace(/\s+/g, '_'))}`,
-            name: nameToTrack,
-            title: tr.subType || 'منتسب / موظف',
-            department: tr.entity || 'شعبة الذاتية والإدارية',
-            badgeNumber: `EMP-${Math.abs(nameToTrack.split('').reduce((acc, c) => (acc << 5) - acc + c.charCodeAt(0), 0)) % 9000 + 1000}`,
-            joinedDate: tr.date || new Date().toISOString().split('T')[0],
-          });
-        }
-      }
-    });
-
-    return list;
-  }, [employees, transactions]);
-
-  // Set default selection
+  // Handle deep navigation target from other sections
   useEffect(() => {
-    if (allEmployees.length > 0) {
-      if (!selectedEmployeeId || !allEmployees.some((e) => e.id === selectedEmployeeId)) {
-        setSelectedEmployeeId(allEmployees[0].id);
+    if (!navigationTarget) return;
+
+    if (navigationTarget.employeeCategory) {
+      setCategoryTab(navigationTarget.employeeCategory);
+    }
+
+    if (navigationTarget.employeeName) {
+      const targetName = navigationTarget.employeeName;
+      const found = employees.find((e) => isEmployeeMatch(e.name, targetName));
+      if (found) {
+        const cat = determineEmployeeCategory(found);
+        setCategoryTab(cat);
+        setSelectedEmployeeId(found.id);
+        setActiveTab('individual');
       }
     }
-  }, [allEmployees, selectedEmployeeId]);
+  }, [navigationTarget, employees]);
 
+  // Current category list based on active category tab
+  const currentCategoryList = useMemo(() => {
+    return categoryTab === 'باحث' ? researcherEmployees : staffEmployees;
+  }, [categoryTab, researcherEmployees, staffEmployees]);
+
+  // Filtered employees by search in current category
   const filteredEmployees = useMemo(() => {
-    return allEmployees.filter(
-      (emp) =>
-        emp.name.toLowerCase().includes(searchEmp.toLowerCase()) ||
-        emp.title.toLowerCase().includes(searchEmp.toLowerCase()) ||
-        emp.department.toLowerCase().includes(searchEmp.toLowerCase()) ||
-        emp.badgeNumber.toLowerCase().includes(searchEmp.toLowerCase())
-    );
-  }, [allEmployees, searchEmp]);
+    const q = searchEmp.trim().toLowerCase();
+    if (!q) return currentCategoryList;
 
-  const selectedEmployee = allEmployees.find((e) => e.id === selectedEmployeeId) || allEmployees[0];
+    return currentCategoryList.filter((emp) => {
+      const matchName = emp.name.toLowerCase().includes(q);
+      const matchTitle = (emp.title || '').toLowerCase().includes(q);
+      const matchDept = (emp.department || '').toLowerCase().includes(q);
+      const matchBadge = (emp.badgeNumber || '').toLowerCase().includes(q);
+      const matchDegree = (emp.academicDegree || '').toLowerCase().includes(q);
+      const matchSpec = (emp.specialization || '').toLowerCase().includes(q);
+      return matchName || matchTitle || matchDept || matchBadge || matchDegree || matchSpec;
+    });
+  }, [currentCategoryList, searchEmp]);
+
+  // Default selection if none selected or selected is not in current list
+  useEffect(() => {
+    if (currentCategoryList.length > 0) {
+      const currentSelectedExists = currentCategoryList.some((e) => e.id === selectedEmployeeId);
+      if (!selectedEmployeeId || !currentSelectedExists) {
+        setSelectedEmployeeId(currentCategoryList[0].id);
+      }
+    } else {
+      setSelectedEmployeeId(null);
+    }
+  }, [categoryTab, currentCategoryList, selectedEmployeeId]);
+
+  const selectedEmployee = useMemo(() => {
+    return (
+      currentCategoryList.find((e) => e.id === selectedEmployeeId) ||
+      employees.find((e) => e.id === selectedEmployeeId) ||
+      currentCategoryList[0] ||
+      null
+    );
+  }, [currentCategoryList, employees, selectedEmployeeId]);
 
   // Find all transactions linked to this selected employee
   const linkedTransactions = useMemo(() => {
     if (!selectedEmployee) return [];
+    return transactions.filter((t) => isEmployeeInTransaction(t, selectedEmployee.name));
+  }, [transactions, selectedEmployee]);
+
+  // All transactions belonging to Personnel Department
+  const personnelTransactions = useMemo(() => {
     return transactions.filter(
       (t) =>
-        isEmployeeMatch(t.employeeName, selectedEmployee.name) ||
-        (t.category === 'منتسبين' && isEmployeeMatch(t.entity, selectedEmployee.name))
+        t.category === 'منتسبين' ||
+        t.category === 'الأساتذة' ||
+        Boolean(t.employeeName && t.employeeName.trim()) ||
+        Boolean(t.dailySituationData)
     );
-  }, [transactions, selectedEmployee]);
+  }, [transactions]);
 
   // Filtered personnel transactions for Tab 2
   const filteredPersonnelTransactions = useMemo(() => {
     const q = searchTransactions.trim().toLowerCase();
     if (!q) return personnelTransactions;
+
     return personnelTransactions.filter(
       (t) =>
-        t.number.toLowerCase().includes(q) ||
-        t.sequence.toLowerCase().includes(q) ||
         t.subject.toLowerCase().includes(q) ||
-        t.subType.toLowerCase().includes(q) ||
+        t.number.toLowerCase().includes(q) ||
+        (t.employeeName && t.employeeName.toLowerCase().includes(q)) ||
         t.entity.toLowerCase().includes(q) ||
-        (t.employeeName && t.employeeName.toLowerCase().includes(q))
+        t.subType.toLowerCase().includes(q)
     );
   }, [personnelTransactions, searchTransactions]);
 
-  // Handle Add New Employee
+  // Open add modal
+  const handleOpenAddModal = (initialCategory?: EmployeeCategory) => {
+    setNewName('');
+    setNewBadge(`EMP-${Math.floor(1000 + Math.random() * 9000)}`);
+    const cat = initialCategory || categoryTab;
+    setNewCategory(cat);
+    if (cat === 'باحث') {
+      setNewTitle('باحث / أستاذ');
+      setNewDept('مركز الدراسات الافريقية - قسم الأساتذة والبحوث');
+      setNewAcademicDegree('أستاذ مساعد دكتور');
+      setNewSpecialization('دراسات إقليمية وتاريخية');
+    } else {
+      setNewTitle('معاون إداري');
+      setNewDept('شعبة الذاتية والإدارية');
+      setNewAcademicDegree('');
+      setNewSpecialization('');
+    }
+    setIsAddModalOpen(true);
+  };
+
+  // Submit new employee
   const handleCreateEmployee = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim()) return;
 
-    const trimmedName = newName.trim();
-    if (onAddEmployee) {
-      onAddEmployee({
-        name: trimmedName,
-        title: newTitle.trim() || 'منتسب',
-        department: newDept.trim() || 'شعبة الذاتية والإدارية',
-        badgeNumber: newBadge.trim() || `EMP-${Math.floor(1000 + Math.random() * 9000)}`,
+    const names = splitEmployeeNames(newName);
+    if (names.length === 0) return;
+
+    names.forEach((name, idx) => {
+      onAddEmployee?.({
+        name,
+        title: newTitle.trim() || (newCategory === 'باحث' ? 'باحث / أستاذ' : 'منتسب'),
+        department: newDept.trim() || (newCategory === 'باحث' ? 'قسم الأساتذة والبحوث' : 'شعبة الذاتية والإدارية'),
+        badgeNumber: names.length > 1 
+          ? `${newCategory === 'باحث' ? 'RES' : 'EMP'}-${Math.floor(1000 + Math.random() * 9000)}` 
+          : newBadge.trim() || `${newCategory === 'باحث' ? 'RES' : 'EMP'}-${Math.floor(1000 + Math.random() * 9000)}`,
+        category: newCategory,
+        academicDegree: newCategory === 'باحث' ? newAcademicDegree.trim() : undefined,
+        specialization: newCategory === 'باحث' ? newSpecialization.trim() : undefined,
         joinedDate: new Date().toISOString().split('T')[0],
       });
-    }
+    });
 
-    setNewName('');
-    setNewTitle('');
-    setNewBadge('');
     setIsAddModalOpen(false);
+    setCategoryTab(newCategory);
   };
 
-  // Start Editing selected employee
+  // Open edit modal
   const handleStartEdit = (emp: Employee) => {
     setEditingEmployee(emp);
     setEditName(emp.name);
-    setEditTitle(emp.title || '');
-    setEditDept(emp.department || '');
+    setEditTitle(emp.title);
+    setEditDept(emp.department);
     setEditBadge(emp.badgeNumber || '');
+    const cat = determineEmployeeCategory(emp);
+    setEditCategory(cat);
+    setEditAcademicDegree(emp.academicDegree || '');
+    setEditSpecialization(emp.specialization || '');
   };
 
-  // Save Edits to employee
+  // Save edited employee
   const handleSaveEdit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingEmployee || !editName.trim()) return;
 
-    if (onUpdateEmployee) {
-      onUpdateEmployee(
-        {
-          ...editingEmployee,
-          name: editName.trim(),
-          title: editTitle.trim() || 'منتسب',
-          department: editDept.trim() || 'شعبة الذاتية والإدارية',
-          badgeNumber: editBadge.trim() || editingEmployee.badgeNumber,
-        },
-        editingEmployee.name
-      );
-    }
+    const updated: Employee = {
+      ...editingEmployee,
+      name: editName.trim(),
+      title: editTitle.trim() || (editCategory === 'باحث' ? 'باحث / أستاذ' : 'منتسب'),
+      department: editDept.trim() || 'شعبة الذاتية والإدارية',
+      badgeNumber: editBadge.trim() || undefined,
+      category: editCategory,
+      academicDegree: editCategory === 'باحث' ? editAcademicDegree.trim() : undefined,
+      specialization: editCategory === 'باحث' ? editSpecialization.trim() : undefined,
+    };
 
+    onUpdateEmployee?.(updated, editingEmployee.name);
     setEditingEmployee(null);
   };
 
-  // Confirm Delete of employee
+  // Delete employee
   const handleConfirmDelete = () => {
     if (!deleteConfirmEmployee) return;
-    if (onDeleteEmployee) {
-      onDeleteEmployee(deleteConfirmEmployee.id);
-    }
-    const remaining = allEmployees.filter((e) => e.id !== deleteConfirmEmployee.id);
-    if (remaining.length > 0) {
-      setSelectedEmployeeId(remaining[0].id);
-    } else {
+    onDeleteEmployee?.(deleteConfirmEmployee.id);
+    if (selectedEmployeeId === deleteConfirmEmployee.id) {
       setSelectedEmployeeId(null);
     }
     setDeleteConfirmEmployee(null);
   };
 
+  // Unlink transaction from employee dossier
+  const handleUnlinkTransaction = (tr: Transaction, empName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!onSaveTransaction || !tr.employeeName) return;
+
+    const remaining = splitEmployeeNames(tr.employeeName).filter(
+      (n) => !isEmployeeMatch(n, empName)
+    );
+
+    const updated: Transaction = {
+      ...tr,
+      employeeName: remaining.length > 0 ? remaining.join(' ، ') : undefined,
+    };
+
+    onSaveTransaction(updated);
+  };
+
   return (
-    <div className="space-y-4">
-      {/* Top Banner & Control Bar */}
-      <div className="bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 p-4 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800/60 text-blue-800 dark:text-blue-300 flex items-center justify-center font-bold shadow-2xs">
-            <Users className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+    <div className="space-y-5">
+      {/* Top Banner & Main View Switcher */}
+      <div className="bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 p-4 sm:p-5 shadow-xs">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500 text-stone-950 flex items-center justify-center font-bold shadow-xs shrink-0">
+              <Users className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base sm:text-lg font-bold text-stone-900 dark:text-stone-100">
+                  سجل المنتسبين والباحثين
+                </h2>
+                <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                  إجمالي الكادر: {employees.length}
+                </span>
+              </div>
+              <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+                إدارة ملفات الكادر الإداري والفني، وهيئة الأساتذة والباحثين، ومتابعة كافة المعاملات والكتب الصادرة والواردة والموقف اليومي
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-base font-bold text-stone-900 dark:text-stone-100 flex items-center gap-2">
-              <span>سجل شؤون المنتسبين والملفات الإدارية</span>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-300 border border-blue-300/40">
-                {allEmployees.length} منتسب مسجل
-              </span>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-900 dark:text-amber-300 border border-amber-300/40">
-                {personnelTransactions.length} كتب ومعاملات
-              </span>
-            </h2>
-            <p className="text-xs text-stone-500 dark:text-stone-400">
-              أي معاملة تضاف في قسم المنتسبين تظهر هنا تلقائياً وترتبط بالسجل وبملف المنتسب المعني
-            </p>
+
+          {/* Quick Action Buttons */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {onNavigate && (
+              <button
+                type="button"
+                id="btn-nav-daily-report"
+                onClick={() => onNavigate({ view: 'daily-situations' })}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 text-xs font-bold transition-all border border-emerald-300 dark:border-emerald-800 shadow-2xs cursor-pointer"
+                title="الانتقال المباشر إلى سجل الموقف والتقرير اليومي"
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                <span>الموقف والتقرير اليومي ↗</span>
+              </button>
+            )}
+
+            {userRole === 'archivist' && (
+              <button
+                type="button"
+                id="btn-add-employee-trigger"
+                onClick={() => handleOpenAddModal()}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-600 text-stone-950 text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>إضافة كادر جديد</span>
+              </button>
+            )}
           </div>
         </div>
 
-        {userRole === 'archivist' && (
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <button
-              type="button"
-              onClick={() => setIsAddModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-900 dark:bg-amber-400 hover:bg-stone-800 dark:hover:bg-amber-300 text-amber-300 dark:text-stone-950 text-xs font-bold transition-colors cursor-pointer shrink-0 shadow-2xs"
-              title="تسجيل منتسب جديد في السجل"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>إضافة منتسب جديد</span>
-            </button>
-          </div>
-        )}
+        {/* View Mode Tabs (Dossiers vs Complete Register) */}
+        <div className="flex flex-wrap items-center gap-2 mt-4 pt-3 border-t border-stone-100 dark:border-stone-800 text-xs">
+          <button
+            type="button"
+            id="tab-view-individual"
+            onClick={() => setActiveTab('individual')}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+              activeTab === 'individual'
+                ? 'bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 shadow-xs'
+                : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 bg-stone-100 dark:bg-stone-800'
+            }`}
+          >
+            <User className="w-3.5 h-3.5" />
+            <span>الأضابير الفردية للمنتسبين والباحثين</span>
+          </button>
+
+          <button
+            type="button"
+            id="tab-view-all-transactions"
+            onClick={() => setActiveTab('all-transactions')}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+              activeTab === 'all-transactions'
+                ? 'bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 shadow-xs'
+                : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 bg-stone-100 dark:bg-stone-800'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>سجل المعاملات الشامل لشؤون الذاتية ({personnelTransactions.length})</span>
+          </button>
+        </div>
       </div>
 
-      {/* View Switcher Tabs: Individual Dossiers vs Complete Personnel Register */}
-      <div className="flex items-center gap-2 border-b border-stone-200 dark:border-stone-800 pb-2">
-        <button
-          type="button"
-          onClick={() => setActiveTab('individual')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'individual'
-              ? 'bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 shadow-xs'
-              : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white'
-          }`}
-        >
-          <User className="w-4 h-4 text-amber-400 dark:text-amber-600" />
-          <span>ملفات المنتسبين الفردية (الأضابير)</span>
-          <span className="text-[11px] font-mono px-1.5 py-0.2 rounded-full bg-white/20 dark:bg-stone-900/20">
-            {allEmployees.length}
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => setActiveTab('all-transactions')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-            activeTab === 'all-transactions'
-              ? 'bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 shadow-xs'
-              : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white'
-          }`}
-        >
-          <FileText className="w-4 h-4 text-blue-500" />
-          <span>سجل كافة معاملات قسم المنتسبين (شامل)</span>
-          <span className="text-[11px] font-mono px-1.5 py-0.2 rounded-full bg-blue-500/20 text-blue-700 dark:text-blue-300">
-            {personnelTransactions.length}
-          </span>
-        </button>
-      </div>
-
-      {/* VIEW 1: Individual Employee Dossiers */}
+      {/* TAB 1: INDIVIDUAL DOSSIERS WITH TWO SEPARATE LISTS */}
       {activeTab === 'individual' && (
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-          {/* Employee Directory List */}
-          <div className="md:col-span-4 bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 p-3 shadow-xs space-y-2.5">
-            <div className="flex items-center justify-between px-1">
-              <span className="text-xs font-bold text-stone-700 dark:text-stone-300 block">
-                قائمة المنتسبين ({filteredEmployees.length})
-              </span>
-              <span className="text-[10px] text-stone-400 dark:text-stone-500">
-                محدث تلقائياً
-              </span>
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-5">
+          {/* Left Column (4 cols): Category Tabs & Filtered Employees List */}
+          <div className="md:col-span-4 space-y-3">
+            {/* TWO DEDICATED CATEGORY TABS AS REQUESTED BY USER */}
+            <div className="bg-white dark:bg-stone-900 p-1.5 rounded-xl border border-stone-200 dark:border-stone-800 shadow-xs">
+              <div className="grid grid-cols-2 gap-1 text-xs">
+                {/* 1. المنتسبون (كادر إداري وفني) */}
+                <button
+                  type="button"
+                  id="tab-category-staff"
+                  onClick={() => setCategoryTab('منتسب')}
+                  className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg font-bold transition-all cursor-pointer ${
+                    categoryTab === 'منتسب'
+                      ? 'bg-stone-900 dark:bg-stone-800 text-amber-300 shadow-xs ring-1 ring-amber-400/40'
+                      : 'text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800'
+                  }`}
+                >
+                  <Briefcase className="w-3.5 h-3.5" />
+                  <span>المنتسبون</span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300">
+                    {staffEmployees.length}
+                  </span>
+                </button>
+
+                {/* 2. الباحثون والأساتذة (كادر بحثي وأكاديمي) */}
+                <button
+                  type="button"
+                  id="tab-category-researchers"
+                  onClick={() => setCategoryTab('باحث')}
+                  className={`flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg font-bold transition-all cursor-pointer ${
+                    categoryTab === 'باحث'
+                      ? 'bg-amber-600 dark:bg-amber-500 text-white dark:text-stone-950 shadow-xs ring-1 ring-amber-400/50'
+                      : 'text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800'
+                  }`}
+                >
+                  <GraduationCap className="w-4 h-4" />
+                  <span>الباحثون والأساتذة</span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-amber-100 dark:bg-stone-700 text-amber-900 dark:text-amber-300 font-bold">
+                    {researcherEmployees.length}
+                  </span>
+                </button>
+              </div>
             </div>
 
+            {/* Search Input for Employees */}
             <div className="relative">
-              <Search className="w-3.5 h-3.5 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-stone-400" />
               <input
                 type="text"
-                placeholder="ابحث باسم المنتسب أو الشعبة..."
                 value={searchEmp}
                 onChange={(e) => setSearchEmp(e.target.value)}
-                className="w-full pr-8 pl-3 py-1.5 rounded-lg border border-stone-200 dark:border-stone-700 text-xs bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 focus:bg-white dark:focus:bg-stone-800 focus:ring-1 focus:ring-amber-500 outline-hidden"
+                placeholder={
+                  categoryTab === 'باحث'
+                    ? 'ابحث باسم الأستاذ، اللقب العلمي، التخصص...'
+                    : 'ابحث باسم المنتسب، العنوان، القسم...'
+                }
+                className="w-full pl-3 pr-9 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900 text-xs text-stone-900 dark:text-stone-100 focus:ring-2 focus:ring-amber-500 outline-hidden"
               />
+              {searchEmp && (
+                <button
+                  type="button"
+                  onClick={() => setSearchEmp('')}
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
-            <div className="space-y-1.5 max-h-[calc(100vh-320px)] overflow-y-auto pr-1">
+            {/* List of Persons in Selected Category */}
+            <div className="space-y-1.5 max-h-[600px] overflow-y-auto pr-0.5">
               {filteredEmployees.length === 0 ? (
                 <div className="p-6 text-center text-xs text-stone-400 bg-stone-50 dark:bg-stone-800/40 rounded-lg border border-dashed border-stone-200 dark:border-stone-800">
-                  لا يوجد منتسب مطابق لنتائج البحث
+                  لا توجد أسماء مطابقة لنتائج البحث في {categoryTab === 'باحث' ? 'قائمة الباحثين والأساتذة' : 'قائمة المنتسبين'}
                 </div>
               ) : (
                 filteredEmployees.map((emp) => {
-                  const count = transactions.filter(
-                    (t) =>
-                      isEmployeeMatch(t.employeeName, emp.name) ||
-                      (t.category === 'منتسبين' && isEmployeeMatch(t.entity, emp.name))
-                  ).length;
+                  const count = transactions.filter((t) => isEmployeeInTransaction(t, emp.name)).length;
                   const isSelected = emp.id === selectedEmployee?.id;
+                  const isResearcher = determineEmployeeCategory(emp) === 'باحث';
 
                   return (
                     <button
                       key={emp.id}
                       type="button"
+                      id={`emp-card-${emp.id}`}
                       onClick={() => setSelectedEmployeeId(emp.id)}
-                      className={`w-full text-right p-3 rounded-lg border transition-all cursor-pointer flex items-center justify-between ${
+                      className={`w-full text-right p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
                         isSelected
-                          ? 'bg-stone-900 dark:bg-stone-800 text-white border-stone-900 dark:border-amber-400 shadow-xs'
-                          : 'bg-stone-50/70 dark:bg-stone-800/50 hover:bg-stone-100 dark:hover:bg-stone-800 text-stone-800 dark:text-stone-200 border-stone-200 dark:border-stone-800'
+                          ? isResearcher
+                            ? 'bg-amber-950 dark:bg-amber-900/60 text-white border-amber-500 ring-2 ring-amber-400/40 shadow-sm'
+                            : 'bg-stone-900 dark:bg-stone-800 text-white border-stone-900 dark:border-amber-400 shadow-sm'
+                          : 'bg-white dark:bg-stone-900 hover:bg-stone-50 dark:hover:bg-stone-800/60 text-stone-800 dark:text-stone-200 border-stone-200 dark:border-stone-800'
                       }`}
                     >
-                      <div className="space-y-0.5 truncate">
-                        <p className="font-semibold text-xs truncate">{emp.name}</p>
-                        <p className={`text-[11px] truncate ${isSelected ? 'text-stone-300 dark:text-stone-400' : 'text-stone-500 dark:text-stone-400'}`}>
-                          {emp.title} • {emp.department}
-                        </p>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                            isResearcher
+                              ? isSelected ? 'bg-amber-500 text-stone-950 font-bold' : 'bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-400'
+                              : isSelected ? 'bg-stone-800 text-amber-300' : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300'
+                          }`}
+                        >
+                          {isResearcher ? <GraduationCap className="w-4 h-4" /> : <User className="w-4 h-4" />}
+                        </div>
+
+                        <div className="space-y-0.5 truncate">
+                          <p className="font-bold text-xs truncate flex items-center gap-1.5">
+                            <span>{emp.name}</span>
+                            {isResearcher && (
+                              <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400 font-normal">
+                                باحث
+                              </span>
+                            )}
+                          </p>
+                          <p className={`text-[11px] truncate ${isSelected ? 'text-stone-300 dark:text-stone-300' : 'text-stone-500 dark:text-stone-400'}`}>
+                            {emp.academicDegree ? `${emp.academicDegree} • ` : ''}
+                            {emp.title} • {emp.department}
+                          </p>
+                        </div>
                       </div>
+
                       <span
                         className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 mr-1.5 ${
-                          isSelected 
-                            ? 'bg-stone-800 dark:bg-stone-700 text-amber-300 ring-1 ring-amber-400/40' 
-                            : 'bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300'
+                          isSelected
+                            ? 'bg-amber-400 text-stone-950'
+                            : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300'
                         }`}
                       >
-                        {count} معاملات
+                        {count} كتب
                       </span>
                     </button>
                   );
@@ -403,24 +528,60 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
             </div>
           </div>
 
-          {/* Selected Employee Records */}
+          {/* Right Column (8 cols): Selected Employee Detailed Dossier */}
           <div className="md:col-span-8 bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 p-4 sm:p-5 shadow-xs space-y-4">
             {selectedEmployee ? (
               <>
-                {/* Header Info */}
+                {/* Header Info Banner for Selected Person */}
                 <div className="border-b border-stone-100 dark:border-stone-800 pb-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800/60 text-stone-800 dark:text-stone-200 flex items-center justify-center font-bold text-lg shadow-2xs">
-                      <User className="w-6 h-6 text-amber-700 dark:text-amber-400" />
+                  <div className="flex items-center gap-3.5">
+                    <div
+                      className={`w-14 h-14 rounded-2xl flex items-center justify-center font-bold text-lg shadow-xs shrink-0 ${
+                        determineEmployeeCategory(selectedEmployee) === 'باحث'
+                          ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                          : 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-stone-200 border border-stone-200 dark:border-stone-700'
+                      }`}
+                    >
+                      {determineEmployeeCategory(selectedEmployee) === 'باحث' ? (
+                        <GraduationCap className="w-7 h-7 text-amber-700 dark:text-amber-400" />
+                      ) : (
+                        <User className="w-7 h-7 text-stone-700 dark:text-stone-300" />
+                      )}
                     </div>
                     <div>
-                      <h3 className="text-base font-bold text-stone-900 dark:text-stone-100">
-                        {selectedEmployee.name}
-                      </h3>
-                      <p className="text-xs text-stone-500 dark:text-stone-400 flex items-center gap-2 flex-wrap">
-                        <span>العنوان الوظيفي: <strong>{selectedEmployee.title}</strong></span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h3 className="text-base sm:text-lg font-bold text-stone-900 dark:text-stone-100">
+                          {selectedEmployee.name}
+                        </h3>
+                        <span
+                          className={`text-xs px-2.5 py-0.5 rounded-full font-bold border ${
+                            determineEmployeeCategory(selectedEmployee) === 'باحث'
+                              ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                              : 'bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-stone-200 border-stone-200 dark:border-stone-700'
+                          }`}
+                        >
+                          {determineEmployeeCategory(selectedEmployee) === 'باحث' ? '🎓 كادر بحثي وأستاذ' : '🏢 كادر إداري وفني'}
+                        </span>
+                      </div>
+
+                      <p className="text-xs text-stone-500 dark:text-stone-400 flex items-center gap-2 flex-wrap mt-1">
+                        {selectedEmployee.academicDegree && (
+                          <>
+                            <span className="text-amber-700 dark:text-amber-400 font-semibold">
+                              {selectedEmployee.academicDegree}
+                            </span>
+                            <span>•</span>
+                          </>
+                        )}
+                        <span>العنوان: <strong>{selectedEmployee.title}</strong></span>
                         <span>•</span>
-                        <span>الجهة / الشعبة: <strong>{selectedEmployee.department}</strong></span>
+                        <span>الجهة: <strong>{selectedEmployee.department}</strong></span>
+                        {selectedEmployee.specialization && (
+                          <>
+                            <span>•</span>
+                            <span>التخصص: <strong>{selectedEmployee.specialization}</strong></span>
+                          </>
+                        )}
                         {selectedEmployee.badgeNumber && (
                           <>
                             <span>•</span>
@@ -433,99 +594,205 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                     </div>
                   </div>
 
-                  {userRole === 'archivist' && (
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-xs px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 font-semibold flex items-center gap-1">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                        <span>ملف نشط بالذاتية</span>
-                      </span>
+                  {/* Actions: Edit & Delete Dossier (available for Director and Archivist) */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      id="btn-edit-employee"
+                      onClick={() => handleStartEdit(selectedEmployee)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-200 text-xs font-semibold transition-colors cursor-pointer shadow-2xs"
+                      title="تعديل بيانات القيد"
+                    >
+                      <Edit3 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                      <span>تعديل</span>
+                    </button>
 
-                      <button
-                        type="button"
-                        id="btn-edit-employee"
-                        onClick={() => handleStartEdit(selectedEmployee)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-200 text-xs font-semibold transition-colors cursor-pointer shadow-2xs"
-                        title="تعديل الاسم والبيانات الوظيفية للمنتسب"
-                      >
-                        <Edit3 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                        <span>تعديل البيانات</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        id="btn-delete-employee"
-                        onClick={() => setDeleteConfirmEmployee(selectedEmployee)}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 text-xs font-semibold transition-colors cursor-pointer shadow-2xs"
-                        title="حذف هذا المنتسب من السجل"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-rose-600 dark:text-rose-400" />
-                        <span>حذف</span>
-                      </button>
-                    </div>
-                  )}
+                    <button
+                      type="button"
+                      id="btn-delete-employee"
+                      onClick={() => setDeleteConfirmEmployee(selectedEmployee)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-rose-200 dark:border-rose-900/60 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 text-xs font-semibold transition-colors cursor-pointer shadow-2xs"
+                      title="حذف هذا الملف/القيد بشكل نهائي وفك ارتباطه"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                      <span>حذف الملف</span>
+                    </button>
+                  </div>
                 </div>
 
-                {/* Linked Transactions Section */}
-                <div className="space-y-3">
+                {/* Quick Dossier Stats & Shortcuts */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  <div className="p-2.5 bg-stone-50 dark:bg-stone-800/60 rounded-lg border border-stone-200 dark:border-stone-700 text-center">
+                    <span className="text-[11px] text-stone-500 dark:text-stone-400 block">إجمالي الكتب والمعاملات</span>
+                    <span className="text-base font-bold text-stone-900 dark:text-stone-100">
+                      {linkedTransactions.length}
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 bg-stone-50 dark:bg-stone-800/60 rounded-lg border border-stone-200 dark:border-stone-700 text-center">
+                    <span className="text-[11px] text-stone-500 dark:text-stone-400 block">الكتب الصادرة</span>
+                    <span className="text-base font-bold text-indigo-700 dark:text-indigo-400">
+                      {linkedTransactions.filter((t) => t.direction === 'صادر').length}
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 bg-stone-50 dark:bg-stone-800/60 rounded-lg border border-stone-200 dark:border-stone-700 text-center">
+                    <span className="text-[11px] text-stone-500 dark:text-stone-400 block">الكتب الواردة</span>
+                    <span className="text-base font-bold text-amber-700 dark:text-amber-400">
+                      {linkedTransactions.filter((t) => t.direction === 'وارد').length}
+                    </span>
+                  </div>
+
+                  <div className="p-2.5 bg-stone-50 dark:bg-stone-800/60 rounded-lg border border-stone-200 dark:border-stone-700 text-center">
+                    <span className="text-[11px] text-stone-500 dark:text-stone-400 block">المواقف والإجازات</span>
+                    <span className="text-base font-bold text-emerald-700 dark:text-emerald-400">
+                      {linkedTransactions.filter((t) => t.isDailySituation || t.subType === 'موقف يومي').length}
+                    </span>
+                  </div>
+                </div>
+
+                {/* List of Linked Transactions */}
+                <div className="space-y-3 pt-2">
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
-                      <FileText className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                      المعاملات والكتب المرتبطة بهذا المنتسب ({linkedTransactions.length})
+                      <FileText className="w-3.5 h-3.5 text-amber-600" />
+                      <span>قائمة الكتب والوثائق الخاصة بـ ({selectedEmployee.name}):</span>
                     </h4>
-                    <span className="text-[11px] text-stone-400 dark:text-stone-500">
-                      اضغط على أي معاملة للاطلاع الفوري على مرفقاتها وتفاصيلها
+                    <span className="text-xs text-stone-400 font-mono">
+                      {linkedTransactions.length} وثيقة
                     </span>
                   </div>
 
                   {linkedTransactions.length === 0 ? (
-                    <div className="p-8 text-center text-xs text-stone-400 dark:text-stone-500 bg-stone-50 dark:bg-stone-800/40 rounded-lg border border-dashed border-stone-200 dark:border-stone-800 space-y-2">
-                      <p className="font-semibold text-stone-600 dark:text-stone-300">لا توجد كتب أو معاملات مسجلة حالياً بهذا الاسم</p>
-                      <p className="text-[11px]">عند إضافة أي كتاب جديد أو تعديل معاملة واختيار هذا المنتسب ستظهر هنا فوراً تلقائياً.</p>
+                    <div className="p-8 text-center bg-stone-50 dark:bg-stone-800/40 rounded-xl border border-dashed border-stone-200 dark:border-stone-800 space-y-3">
+                      <FileText className="w-8 h-8 text-stone-300 dark:text-stone-600 mx-auto" />
+                      <p className="text-xs text-stone-500 dark:text-stone-400">
+                        لا توجد كتب أو معاملات مسجلة باسم هذا {determineEmployeeCategory(selectedEmployee) === 'باحث' ? 'الأستاذ' : 'المنتسب'} حالياً
+                      </p>
+                      <p className="text-[11px] text-stone-400 dark:text-stone-500">
+                        إذا كان هذا السجل أضيف عن طريق الخطأ أو ترغب بحذفه لعدم ارتباطه بأي معاملات، يمكنك إزالته فوراً:
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setDeleteConfirmEmployee(selectedEmployee)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60 text-xs font-bold transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                        <span>حذف هذا الملف / القيد غير المرتبط 🗑️</span>
+                      </button>
                     </div>
                   ) : (
-                    <div className="space-y-2">
+                    <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-0.5">
                       {linkedTransactions.map((tr) => (
                         <div
                           key={tr.id}
                           onClick={() => onSelectTransaction(tr)}
-                          className="p-3.5 rounded-lg border border-stone-200 dark:border-stone-800 hover:border-stone-400 dark:hover:border-stone-600 hover:bg-amber-50/40 dark:hover:bg-stone-800/60 transition-colors flex items-center justify-between gap-3 cursor-pointer group"
+                          className="p-3.5 rounded-xl border border-stone-200 dark:border-stone-700/80 bg-white dark:bg-stone-800/70 hover:border-amber-400 dark:hover:border-amber-500 transition-all cursor-pointer shadow-2xs space-y-2.5"
                         >
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2 flex-wrap text-xs">
-                              <span className="font-bold font-mono text-stone-900 dark:text-stone-100 bg-stone-100 dark:bg-stone-800 group-hover:bg-amber-100 dark:group-hover:bg-amber-950 px-1.5 py-0.5 rounded text-[11px]">
-                                {tr.number}
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-stone-900 text-amber-300 dark:bg-amber-400 dark:text-stone-950">
+                                العدد: {tr.number}
                               </span>
-                              <span className="text-stone-400 dark:text-stone-500">• {tr.date}</span>
-                              <span className="px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 font-medium text-[10px]">
-                                {tr.subType}
-                              </span>
-                              <span className="text-stone-500 dark:text-stone-400 text-[11px]">
-                                الجهة: {tr.entity}
-                              </span>
-                              {tr.attachments && tr.attachments.length > 0 && (
-                                <span className="px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10px] font-bold border border-blue-200 dark:border-blue-800/60">
-                                  📎 {tr.attachments.length} مرفقات
-                                </span>
-                              )}
+
+                              {/* Interactive Clickable Badges for Direct Navigation */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onNavigate?.({ view: 'transactions', direction: tr.direction });
+                                }}
+                                className={`text-[11px] font-semibold px-2 py-0.5 rounded cursor-pointer hover:opacity-80 transition-opacity ${
+                                  tr.direction === 'صادر'
+                                    ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
+                                    : tr.direction === 'وارد'
+                                    ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                                    : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300'
+                                }`}
+                                title={`الانتقال وتصفية كتب ال${tr.direction}`}
+                              >
+                                {tr.direction} ↗
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (tr.isDailySituation || tr.subType === 'موقف يومي') {
+                                    onNavigate?.({ view: 'daily-situations' });
+                                  } else {
+                                    onNavigate?.({ view: 'transactions', subType: tr.subType });
+                                  }
+                                }}
+                                className="text-[11px] font-medium px-2 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors cursor-pointer"
+                                title="الانتقال إلى هذا النوع من المعاملات"
+                              >
+                                {tr.subType} ↗
+                              </button>
                             </div>
-                            <p className="text-xs font-semibold text-stone-800 dark:text-stone-200 leading-relaxed">
-                              {tr.subject}
-                            </p>
+
+                            <span className="text-xs text-stone-400 font-medium flex items-center gap-1">
+                              <Calendar className="w-3.5 h-3.5" />
+                              {tr.date}
+                            </span>
                           </div>
 
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span
-                              className={`text-[11px] px-2.5 py-0.5 rounded-full font-semibold border whitespace-nowrap ${
-                                tr.status === 'جديد'
-                                  ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
-                                  : tr.status === 'قيد الإنجاز'
-                                  ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
-                                  : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                              }`}
-                            >
-                              {tr.status}
+                          <p className="text-xs font-semibold text-stone-900 dark:text-stone-100 line-clamp-2">
+                            {tr.subject}
+                          </p>
+
+                          {/* Direct Attachment Viewers in Researcher / Employee Dossier */}
+                          {tr.attachments && tr.attachments.length > 0 && (
+                            <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-stone-100 dark:border-stone-700/60">
+                              <span className="text-[10px] font-bold text-stone-500 dark:text-stone-400">
+                                المرفقات الممسوحة ({tr.attachments.length}):
+                              </span>
+                              {tr.attachments.map((att, attIdx) => (
+                                <button
+                                  key={att.id || attIdx}
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (onViewAttachmentDirectly) {
+                                      onViewAttachmentDirectly(tr, attIdx);
+                                    } else {
+                                      onSelectTransaction(tr);
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-stone-100 hover:bg-amber-100 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 hover:text-stone-950 dark:text-stone-300 dark:hover:text-amber-300 border border-stone-200 dark:border-stone-700 text-[10px] font-semibold transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+                                  title={`فتح ${att.name} مباشرة ومطالعته بدقة عالية`}
+                                >
+                                  <Eye className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                                  <span className="max-w-[130px] truncate">{att.name}</span>
+                                  <span className="text-[9px] text-stone-400 font-mono">({att.type})</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between text-[11px] text-stone-500 pt-1.5 border-t border-stone-100 dark:border-stone-700/60">
+                            <span className="flex items-center gap-1">
+                              <Building2 className="w-3.5 h-3.5 text-stone-400" />
+                              الجهة: <strong>{tr.entity}</strong>
                             </span>
-                            <Eye className="w-4 h-4 text-stone-400 group-hover:text-stone-900 dark:group-hover:text-stone-100" />
+
+                            <div className="flex items-center gap-3">
+                              {/* Option to unlink this transaction from this employee */}
+                              <button
+                                type="button"
+                                onClick={(e) => handleUnlinkTransaction(tr, selectedEmployee.name, e)}
+                                className="text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 text-[11px] font-semibold flex items-center gap-1 hover:underline cursor-pointer"
+                                title="فك ارتباط هذا الكتاب عن هذا الملف وإزالته من الإضبارة"
+                              >
+                                <X className="w-3 h-3" />
+                                <span>فك ارتباط الكتاب</span>
+                              </button>
+
+                              <span className="text-amber-600 dark:text-amber-400 font-bold flex items-center gap-1">
+                                عرض المعاملة
+                                <ChevronRight className="w-3.5 h-3.5" />
+                              </span>
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -534,209 +801,301 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 </div>
               </>
             ) : (
-              <div className="p-12 text-center text-xs text-stone-400">
-                اختر منتسباً من القائمة الجانبية لعرض أضبارته ومعاملاته
+              <div className="p-12 text-center text-stone-400 space-y-2">
+                <Users className="w-12 h-12 mx-auto text-stone-300 dark:text-stone-700" />
+                <p className="text-sm font-semibold text-stone-600 dark:text-stone-400">
+                  يرجى اختيار شخص من القائمة الجانبية لعرض إضبارته
+                </p>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* VIEW 2: Complete Personnel Department Register (All Transactions in Category 'منتسبين') */}
+      {/* TAB 2: COMPLETE PERSONNEL REGISTER (ALL TRANSACTIONS) */}
       {activeTab === 'all-transactions' && (
-        <div className="bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 overflow-hidden shadow-xs space-y-4 p-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-stone-100 dark:border-stone-800 pb-3">
+        <div className="bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 p-4 sm:p-5 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-100 dark:border-stone-800">
             <div>
-              <h3 className="text-sm font-bold text-stone-900 dark:text-stone-100 flex items-center gap-2">
-                <span>سجل معاملات وكتب قسم شؤون المنتسبين الإجمالي</span>
-                <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-300 text-xs font-mono font-bold">
-                  {filteredPersonnelTransactions.length} معاملة
-                </span>
+              <h3 className="text-sm sm:text-base font-bold text-stone-900 dark:text-stone-100">
+                سجل القيود والمعاملات الشامل لشؤون الذاتية والأساتذة
               </h3>
-              <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
-                قائمة متكاملة لجميع معاملات المنتسبين (إجازات، أوامر، مباشرات، انفكاك، باجات، كتب إدارية)
+              <p className="text-xs text-stone-500 dark:text-stone-400">
+                يعرض كافة الكتب الرسمية والموافقات والإجازات والمواقف المرتبطة بالكوادر
               </p>
             </div>
 
-            <div className="relative w-full sm:w-64">
-              <Search className="w-3.5 h-3.5 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2" />
+            <div className="relative w-full sm:w-72">
+              <Search className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-stone-400" />
               <input
                 type="text"
-                placeholder="بحث في معاملات المنتسبين..."
                 value={searchTransactions}
                 onChange={(e) => setSearchTransactions(e.target.value)}
-                className="w-full pr-8 pl-3 py-1.5 rounded-lg border border-stone-200 dark:border-stone-700 text-xs bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden focus:ring-1 focus:ring-amber-500"
+                placeholder="ابحث في السجل أو باسم المنتسب..."
+                className="w-full pl-3 pr-9 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-xs text-stone-900 dark:text-stone-100 focus:ring-2 focus:ring-amber-500 outline-hidden"
               />
             </div>
           </div>
 
-          {filteredPersonnelTransactions.length === 0 ? (
-            <div className="p-12 text-center text-xs text-stone-400 dark:text-stone-500 space-y-2">
-              <p className="font-semibold text-stone-600 dark:text-stone-300">
-                لا توجد معاملات مسجلة في قسم المنتسبين
-              </p>
-              <p className="text-[11px]">
-                عند إضافة معاملة وتحديد القسم «شؤون المنتسبين» أو إدخال اسم منتسب ستظهر هنا مباشرة.
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y divide-stone-100 dark:divide-stone-800">
-              {filteredPersonnelTransactions.map((tr) => (
+          <div className="space-y-2.5">
+            {filteredPersonnelTransactions.length === 0 ? (
+              <div className="p-8 text-center text-xs text-stone-400 bg-stone-50 dark:bg-stone-800/40 rounded-xl border border-dashed border-stone-200 dark:border-stone-800">
+                لا توجد معاملات مطابقة للبحث في السجل الشامل
+              </div>
+            ) : (
+              filteredPersonnelTransactions.map((tr) => (
                 <div
                   key={tr.id}
                   onClick={() => onSelectTransaction(tr)}
-                  className="py-3 px-2 hover:bg-amber-50/40 dark:hover:bg-stone-800/60 transition-colors flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 cursor-pointer group"
+                  className="p-3.5 rounded-xl border border-stone-200 dark:border-stone-700/80 bg-white dark:bg-stone-800/70 hover:border-amber-400 transition-all cursor-pointer shadow-2xs space-y-2"
                 >
-                  <div className="space-y-1 max-w-2xl">
-                    <div className="flex items-center gap-2 flex-wrap text-xs">
-                      <span className="font-bold font-mono text-stone-900 dark:text-stone-100 bg-stone-100 dark:bg-stone-800 group-hover:bg-amber-100 dark:group-hover:bg-amber-950 px-2 py-0.5 rounded text-[11px] border border-stone-200 dark:border-stone-700">
-                        {tr.number}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-stone-900 text-amber-300 dark:bg-amber-400 dark:text-stone-950">
+                        العدد: {tr.number}
                       </span>
-                      <span className="text-stone-400 dark:text-stone-500">• {tr.date}</span>
-                      <span className="px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 font-semibold text-[10px] border border-blue-200 dark:border-blue-800/60">
+                      <span
+                        className={`text-[11px] font-semibold px-2 py-0.5 rounded ${
+                          tr.direction === 'صادر'
+                            ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300'
+                            : 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300'
+                        }`}
+                      >
+                        {tr.direction}
+                      </span>
+                      <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300">
                         {tr.subType}
                       </span>
-                      <span className="text-stone-500 dark:text-stone-400 text-[11px]">
-                        الجهة: {tr.entity}
-                      </span>
-                      {tr.attachments && tr.attachments.length > 0 && (
-                        <span className="px-1.5 py-0.2 rounded bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 text-[10px] font-bold">
-                          📎 {tr.attachments.length} مرفقات
+                      {tr.employeeName && (
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                          👤 {tr.employeeName}
                         </span>
                       )}
                     </div>
 
-                    <p className="text-xs sm:text-sm font-semibold text-stone-800 dark:text-stone-200 leading-relaxed">
-                      {tr.subject}
-                    </p>
-
-                    {tr.employeeName && (
-                      <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1">
-                        <User className="w-3.5 h-3.5" />
-                        <span>المنتسب المعني: <strong>{tr.employeeName}</strong></span>
-                      </p>
-                    )}
+                    <span className="text-xs text-stone-400">{tr.date}</span>
                   </div>
 
-                  <div className="flex items-center gap-3 shrink-0 self-end sm:self-center">
-                    <span
-                      className={`text-[11px] px-2.5 py-0.5 rounded-full font-semibold border whitespace-nowrap ${
-                        tr.status === 'جديد'
-                          ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
-                          : tr.status === 'قيد الإنجاز'
-                          ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
-                          : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                      }`}
-                    >
-                      {tr.status}
-                    </span>
+                  <p className="text-xs font-semibold text-stone-900 dark:text-stone-100">
+                    {tr.subject}
+                  </p>
 
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectTransaction(tr);
-                      }}
-                      className="p-1.5 rounded-lg border border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-300 hover:bg-stone-900 hover:text-white dark:hover:bg-amber-400 dark:hover:text-stone-950 transition-colors"
-                      title="معاينة تفاصيل ومرفقات المعاملة"
-                    >
-                      <Eye className="w-4 h-4" />
-                    </button>
-                  </div>
+                  {/* Direct Attachment Viewers in Complete Register */}
+                  {tr.attachments && tr.attachments.length > 0 && (
+                    <div className="flex items-center gap-1.5 flex-wrap pt-1 border-t border-stone-100 dark:border-stone-700/60">
+                      <span className="text-[10px] font-bold text-stone-500 dark:text-stone-400">
+                        معاينة المرفقات:
+                      </span>
+                      {tr.attachments.map((att, attIdx) => (
+                        <button
+                          key={att.id || attIdx}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onViewAttachmentDirectly) {
+                              onViewAttachmentDirectly(tr, attIdx);
+                            } else {
+                              onSelectTransaction(tr);
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-stone-100 hover:bg-amber-100 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 hover:text-stone-950 dark:text-stone-300 dark:hover:text-amber-300 border border-stone-200 dark:border-stone-700 text-[10px] font-semibold transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+                          title={`فتح ومطالعة ${att.name} بدقة عالية`}
+                        >
+                          <Eye className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                          <span className="max-w-[130px] truncate">{att.name}</span>
+                          <span className="text-[9px] text-stone-400 font-mono">({att.type})</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
-          )}
+              ))
+            )}
+          </div>
         </div>
       )}
 
-      {/* Modal: Add New Employee */}
+      {/* MODAL: ADD NEW EMPLOYEE / RESEARCHER */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div 
-            className="bg-white dark:bg-stone-900 rounded-2xl max-w-md w-full p-5 shadow-2xl border border-stone-200 dark:border-stone-800 space-y-4"
-            dir="rtl"
-          >
-            <div className="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-3">
-              <h3 className="text-sm font-bold text-stone-900 dark:text-stone-100">
-                تسجيل منتسب جديد في سجل الذاتية
-              </h3>
+        <div className="fixed inset-0 z-50 bg-stone-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 max-w-lg w-full p-5 sm:p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-stone-800">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-amber-500 text-stone-950 flex items-center justify-center font-bold">
+                  <Plus className="w-4 h-4" />
+                </div>
+                <h3 className="text-sm sm:text-base font-bold text-stone-900 dark:text-stone-100">
+                  إضافة كادر جديد إلى السجل
+                </h3>
+              </div>
               <button
                 type="button"
                 onClick={() => setIsAddModalOpen(false)}
-                className="p-1 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800"
+                className="text-stone-400 hover:text-stone-600"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateEmployee} className="space-y-3 text-xs">
+            <form onSubmit={handleCreateEmployee} className="space-y-4">
+              {/* Category Selector (منتسب vs باحث/أستاذ) */}
               <div>
-                <label className="block font-semibold text-stone-700 dark:text-stone-300 mb-1">
-                  اسم المنتسب الثلاثي واللقب *
+                <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5">
+                  نوع القائمة والتصنيف *
                 </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setNewCategory('منتسب')}
+                    className={`py-2 px-3 rounded-lg border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      newCategory === 'منتسب'
+                        ? 'bg-stone-900 text-amber-300 border-stone-900 shadow-xs ring-1 ring-amber-400/40'
+                        : 'bg-stone-50 dark:bg-stone-800 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-700'
+                    }`}
+                  >
+                    <Briefcase className="w-3.5 h-3.5" />
+                    <span>قائمة المنتسبين (إداري/فني)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setNewCategory('باحث')}
+                    className={`py-2 px-3 rounded-lg border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      newCategory === 'باحث'
+                        ? 'bg-amber-600 text-white border-amber-600 shadow-xs ring-1 ring-amber-400/50'
+                        : 'bg-stone-50 dark:bg-stone-800 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-stone-700'
+                    }`}
+                  >
+                    <GraduationCap className="w-4 h-4" />
+                    <span>قائمة الباحثين والأساتذة</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Name Field (supports multiple comma-separated names) */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-stone-700 dark:text-stone-300">
+                    الاسم الثلاثي أو الرباعي *
+                  </label>
+                  <span className="text-[10px] text-stone-500">
+                    (يمكن كتابة أكثر من اسم مفصولاً بفارزة "،")
+                  </span>
+                </div>
                 <input
                   type="text"
                   required
-                  placeholder="مثال: أحمد جاسم محمد الشمري"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-amber-500"
+                  placeholder={
+                    newCategory === 'باحث'
+                      ? 'مثال: أ.د. حسن هادي الموسوي، د. عمار صادق...'
+                      : 'مثال: أحمد جاسم كريم، علي رضا عبد الزهرة...'
+                  }
+                  className="w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-xs focus:ring-2 focus:ring-amber-500 outline-hidden"
                 />
+
+                {/* Live parsed names preview */}
+                {newName.includes('،') || newName.includes(',') || newName.includes('\n') ? (
+                  <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] text-stone-400">سيتم إنشاء قيود منفصلة لـ:</span>
+                    {splitEmployeeNames(newName).map((n, i) => (
+                      <span key={i} className="text-[10px] px-2 py-0.2 rounded-full bg-amber-100 text-amber-900 font-bold">
+                        {n}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
               </div>
 
+              {/* Specific fields if Researcher */}
+              {newCategory === 'باحث' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-amber-50/50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800/60">
+                  <div>
+                    <label className="block text-xs font-bold text-amber-900 dark:text-amber-300 mb-1">
+                      اللقب العلمي / الرتبة
+                    </label>
+                    <input
+                      type="text"
+                      value={newAcademicDegree}
+                      onChange={(e) => setNewAcademicDegree(e.target.value)}
+                      placeholder="أستاذ دكتور، باحث، ماجستير..."
+                      className="w-full px-3 py-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-stone-800 text-xs focus:ring-2 focus:ring-amber-500 outline-hidden"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-amber-900 dark:text-amber-300 mb-1">
+                      الاختصاص / المجال البحثي
+                    </label>
+                    <input
+                      type="text"
+                      value={newSpecialization}
+                      onChange={(e) => setNewSpecialization(e.target.value)}
+                      placeholder="دراسات إقليمية، لغات، تاريخ..."
+                      className="w-full px-3 py-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-stone-800 text-xs focus:ring-2 focus:ring-amber-500 outline-hidden"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Title & Department */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
+                    العنوان الوظيفي
+                  </label>
+                  <input
+                    type="text"
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    placeholder="معاون إداري، باحث، سائق..."
+                    className="w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-xs focus:ring-2 focus:ring-amber-500 outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
+                    الجهة / الشعبة / المركز
+                  </label>
+                  <input
+                    type="text"
+                    value={newDept}
+                    onChange={(e) => setNewDept(e.target.value)}
+                    placeholder="مركز الدراسات الافريقية، شعبة الذاتية..."
+                    className="w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-xs focus:ring-2 focus:ring-amber-500 outline-hidden"
+                  />
+                </div>
+              </div>
+
+              {/* Badge Number */}
               <div>
-                <label className="block font-semibold text-stone-700 dark:text-stone-300 mb-1">
-                  العنوان الوظيفي / الرتبة
+                <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
+                  رقم الباج الوظيفي / المعرف
                 </label>
                 <input
                   type="text"
-                  placeholder="مثال: رئيس أبحاث، م. مهندس، معاون مدير..."
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-amber-500"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-stone-700 dark:text-stone-300 mb-1">
-                  القسم / الشعبة
-                </label>
-                <input
-                  type="text"
-                  placeholder="مثال: شعبة الذاتية والإدارية، الحسابات..."
-                  value={newDept}
-                  onChange={(e) => setNewDept(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-amber-500"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-stone-700 dark:text-stone-300 mb-1">
-                  الرقم الوظيفي / رقم الباج (اختياري)
-                </label>
-                <input
-                  type="text"
-                  placeholder="مثال: EMP-2026-44"
                   value={newBadge}
                   onChange={(e) => setNewBadge(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-amber-500"
+                  placeholder="EMP-1025"
+                  className="w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-xs focus:ring-2 focus:ring-amber-500 outline-hidden font-mono"
                 />
               </div>
 
-              <div className="pt-2 flex items-center justify-end gap-2">
+              {/* Submit Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100 dark:border-stone-800">
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
-                  className="px-3.5 py-1.5 rounded-lg border border-stone-300 dark:border-stone-700 text-stone-700 dark:text-stone-300 font-semibold hover:bg-stone-50 dark:hover:bg-stone-800 cursor-pointer"
+                  className="px-4 py-2 rounded-lg text-xs font-bold text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors cursor-pointer"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 rounded-lg bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 font-bold hover:bg-stone-800 dark:hover:bg-amber-300 shadow-xs cursor-pointer"
+                  className="px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-stone-950 text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
                 >
-                  حفظ وتثبيت المنتسب
+                  حفظ وتسجيل في القائمة
                 </button>
               </div>
             </form>
@@ -744,95 +1103,149 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
         </div>
       )}
 
-      {/* Edit Employee Modal */}
+      {/* MODAL: EDIT EMPLOYEE */}
       {editingEmployee && (
-        <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div 
-            className="bg-white dark:bg-stone-900 rounded-2xl max-w-md w-full p-5 shadow-2xl border border-stone-200 dark:border-stone-800 space-y-4"
-            dir="rtl"
-          >
-            <div className="flex items-center justify-between border-b border-stone-100 dark:border-stone-800 pb-3">
+        <div className="fixed inset-0 z-50 bg-stone-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 max-w-lg w-full p-5 sm:p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-stone-800">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800/60 text-amber-700 dark:text-amber-400 flex items-center justify-center">
-                  <Edit3 className="w-4 h-4" />
-                </div>
-                <h3 className="text-sm font-bold text-stone-900 dark:text-stone-100">
-                  تعديل بيانات المنتسب
+                <Edit3 className="w-5 h-5 text-amber-500" />
+                <h3 className="text-base font-bold text-stone-900 dark:text-stone-100">
+                  تعديل بيانات القيد الوظيفي
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setEditingEmployee(null)}
-                className="p-1 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
+                className="text-stone-400 hover:text-stone-600"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveEdit} className="space-y-3 text-xs">
+            <form onSubmit={handleSaveEdit} className="space-y-4">
               <div>
-                <label className="block font-semibold text-stone-700 dark:text-stone-300 mb-1">
-                  الاسم الكامل للمنتسب *
+                <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5">
+                  التصنيف والقائمة
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditCategory('منتسب')}
+                    className={`py-2 px-3 rounded-lg border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      editCategory === 'منتسب'
+                        ? 'bg-stone-900 text-amber-300 border-stone-900 shadow-xs'
+                        : 'bg-stone-50 text-stone-600 border-stone-200'
+                    }`}
+                  >
+                    <Briefcase className="w-3.5 h-3.5" />
+                    <span>قائمة المنتسبين</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setEditCategory('باحث')}
+                    className={`py-2 px-3 rounded-lg border text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                      editCategory === 'باحث'
+                        ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                        : 'bg-stone-50 text-stone-600 border-stone-200'
+                    }`}
+                  >
+                    <GraduationCap className="w-4 h-4" />
+                    <span>قائمة الباحثين والأساتذة</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
+                  الاسم الكامل *
                 </label>
                 <input
                   type="text"
                   required
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-amber-500"
-                />
-                <p className="text-[11px] text-stone-400 dark:text-stone-500 mt-1">
-                  سيتم تحديث الاسم تلقائياً في جميع المعاملات والمخاطبات المرتبطة به.
-                </p>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-stone-700 dark:text-stone-300 mb-1">
-                  العنوان الوظيفي / الرتبة
-                </label>
-                <input
-                  type="text"
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-amber-500"
+                  className="w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-xs focus:ring-2 focus:ring-amber-500 outline-hidden"
                 />
               </div>
 
-              <div>
-                <label className="block font-semibold text-stone-700 dark:text-stone-300 mb-1">
-                  القسم / الشعبة
-                </label>
-                <input
-                  type="text"
-                  value={editDept}
-                  onChange={(e) => setEditDept(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-amber-500"
-                />
+              {editCategory === 'باحث' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 bg-amber-50/50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800/60">
+                  <div>
+                    <label className="block text-xs font-bold text-amber-900 dark:text-amber-300 mb-1">
+                      اللقب العلمي
+                    </label>
+                    <input
+                      type="text"
+                      value={editAcademicDegree}
+                      onChange={(e) => setEditAcademicDegree(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-stone-800 text-xs focus:ring-2 focus:ring-amber-500 outline-hidden"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-amber-900 dark:text-amber-300 mb-1">
+                      الاختصاص
+                    </label>
+                    <input
+                      type="text"
+                      value={editSpecialization}
+                      onChange={(e) => setEditSpecialization(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg border border-amber-300 dark:border-amber-700 bg-white dark:bg-stone-800 text-xs focus:ring-2 focus:ring-amber-500 outline-hidden"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
+                    العنوان الوظيفي
+                  </label>
+                  <input
+                    type="text"
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-xs focus:ring-2 focus:ring-amber-500 outline-hidden"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
+                    القسم / الشعبة
+                  </label>
+                  <input
+                    type="text"
+                    value={editDept}
+                    onChange={(e) => setEditDept(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-xs focus:ring-2 focus:ring-amber-500 outline-hidden"
+                  />
+                </div>
               </div>
 
               <div>
-                <label className="block font-semibold text-stone-700 dark:text-stone-300 mb-1">
-                  الرقم الوظيفي / رقم الباج
+                <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
+                  رقم الباج الوظيفي
                 </label>
                 <input
                   type="text"
                   value={editBadge}
                   onChange={(e) => setEditBadge(e.target.value)}
-                  className="w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 outline-hidden focus:ring-2 focus:ring-amber-500"
+                  className="w-full px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-xs focus:ring-2 focus:ring-amber-500 outline-hidden font-mono"
                 />
               </div>
 
-              <div className="pt-3 flex items-center justify-end gap-2 border-t border-stone-100 dark:border-stone-800">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100 dark:border-stone-800">
                 <button
                   type="button"
                   onClick={() => setEditingEmployee(null)}
-                  className="px-3.5 py-1.5 rounded-lg border border-stone-300 dark:border-stone-700 text-stone-700 dark:text-stone-300 font-semibold hover:bg-stone-50 dark:hover:bg-stone-800 cursor-pointer"
+                  className="px-4 py-2 rounded-lg text-xs font-bold text-stone-600 dark:text-stone-400 hover:bg-stone-100 transition-colors"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 rounded-lg bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 font-bold hover:bg-stone-800 dark:hover:bg-amber-300 shadow-xs cursor-pointer"
+                  className="px-5 py-2 rounded-lg bg-amber-500 hover:bg-amber-600 text-stone-950 text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
                 >
                   حفظ التعديلات
                 </button>
@@ -842,35 +1255,33 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
+      {/* MODAL: DELETE CONFIRMATION */}
       {deleteConfirmEmployee && (
-        <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div 
-            className="bg-white dark:bg-stone-900 rounded-2xl max-w-md w-full p-5 shadow-2xl border border-stone-200 dark:border-stone-800 space-y-4"
-            dir="rtl"
-          >
-            <div className="flex items-start gap-3">
-              <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+        <div className="fixed inset-0 z-50 bg-stone-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-stone-900 rounded-2xl border border-rose-200 dark:border-rose-900 max-w-md w-full p-5 sm:p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950 flex items-center justify-center shrink-0">
                 <AlertTriangle className="w-5 h-5" />
               </div>
-              <div className="space-y-1">
-                <h3 className="text-sm font-bold text-stone-900 dark:text-stone-100">
-                  تأكيد حذف المنتسب من السجل
+              <div>
+                <h3 className="text-base font-bold text-stone-900 dark:text-stone-100">
+                  تأكيد حذف القيد بشكل نهائي
                 </h3>
-                <p className="text-xs text-stone-600 dark:text-stone-300 leading-relaxed">
-                  هل أنت متأكد من رغبتك في حذف المنتسب <strong className="text-rose-700 dark:text-rose-400">"{deleteConfirmEmployee.name}"</strong> من سجل الذاتية؟
-                </p>
-                <p className="text-[11px] text-stone-400 dark:text-stone-500 pt-1">
-                  ملاحظة: لن يتم حذف المعاملات السابقة المقيدة، ولكن ستتم إزالة ملف المنتسب من قائمة السجل.
+                <p className="text-xs text-stone-500 dark:text-stone-400">
+                  هل أنت متأكد من حذف ({deleteConfirmEmployee.name})؟
                 </p>
               </div>
             </div>
 
-            <div className="pt-3 flex items-center justify-end gap-2 border-t border-stone-100 dark:border-stone-800">
+            <div className="p-3 bg-rose-50 dark:bg-rose-950/30 rounded-xl text-xs text-rose-800 dark:text-rose-300 leading-relaxed border border-rose-200 dark:border-rose-900/60">
+              سيتم حذف القيد نهائياً من سجل {determineEmployeeCategory(deleteConfirmEmployee) === 'باحث' ? 'الباحثين والأساتذة' : 'المنتسبين'}، وفك ارتباط اسمه من المعاملات المرتبطة حتى لا يظهر مجدداً.
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => setDeleteConfirmEmployee(null)}
-                className="px-3.5 py-1.5 rounded-lg border border-stone-300 dark:border-stone-700 text-stone-700 dark:text-stone-300 font-semibold hover:bg-stone-50 dark:hover:bg-stone-800 cursor-pointer"
+                className="px-4 py-2 rounded-lg text-xs font-bold text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors"
               >
                 إلغاء
               </button>
@@ -878,9 +1289,9 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                 type="button"
                 id="btn-confirm-delete-employee"
                 onClick={handleConfirmDelete}
-                className="px-4 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-xs cursor-pointer"
+                className="px-5 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
               >
-                تأكيد الحذف
+                نعم، احذف القيد نهائياً
               </button>
             </div>
           </div>

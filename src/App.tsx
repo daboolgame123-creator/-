@@ -3,13 +3,15 @@ import { Header } from './components/Header';
 import { TransactionsList } from './components/TransactionsList';
 import { MonthlyReportView } from './components/MonthlyReportView';
 import { EmployeesView } from './components/EmployeesView';
+import { DailySituationsView } from './components/DailySituationsView';
 import { TransactionDetailModal } from './components/TransactionDetailModal';
 import { NewTransactionModal } from './components/NewTransactionModal';
 import { ImageLightboxModal } from './components/ImageLightboxModal';
 import { ArchivistStudioView } from './components/ArchivistStudioView';
 import { ArchivistEditorModal } from './components/ArchivistEditorModal';
 import { INITIAL_TRANSACTIONS, INITIAL_EMPLOYEES } from './data/mockData';
-import { Transaction, TransactionStatus, Employee, UserRole, Attachment } from './types';
+import { Transaction, TransactionStatus, Employee, UserRole, Attachment, NavigationTarget } from './types';
+import { splitEmployeeNames, isEntityOrDepartmentName, determineEmployeeCategory, isEmployeeMatch } from './utils/employeeUtils';
 import { ShieldCheck, Info, Bell, CheckCheck, UserCheck, Eye, Check, Edit3 } from 'lucide-react';
 
 const STORAGE_KEY = 'zatiya_prototype_transactions_v2';
@@ -65,17 +67,47 @@ export default function App() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+          // Normalize and break up any composite multi-name employees from previous entries
+          const cleaned: Employee[] = [];
+          const seenNames = new Set<string>();
+
+          parsed.forEach((emp: Employee) => {
+            if (isEntityOrDepartmentName(emp.name)) return;
+            const splitNames = splitEmployeeNames(emp.name || '');
+            if (splitNames.length <= 1) {
+              const nameLower = (emp.name || '').trim().toLowerCase();
+              if (nameLower && !seenNames.has(nameLower)) {
+                seenNames.add(nameLower);
+                cleaned.push(emp);
+              }
+            } else {
+              splitNames.forEach((n, idx) => {
+                if (isEntityOrDepartmentName(n)) return;
+                const nameLower = n.trim().toLowerCase();
+                if (nameLower && !seenNames.has(nameLower)) {
+                  seenNames.add(nameLower);
+                  cleaned.push({
+                    ...emp,
+                    id: `${emp.id}-part-${idx}-${Math.floor(Math.random() * 1000)}`,
+                    name: n.trim(),
+                    badgeNumber: emp.badgeNumber ? `${emp.badgeNumber}-${idx + 1}` : `EMP-${Math.floor(1000 + Math.random() * 9000)}`,
+                  });
+                }
+              });
+            }
+          });
+          return cleaned.length > 0 ? cleaned : INITIAL_EMPLOYEES.filter((e) => !isEntityOrDepartmentName(e.name));
         }
       }
     } catch {
       // fallback
     }
-    return INITIAL_EMPLOYEES;
+    return INITIAL_EMPLOYEES.filter((e) => !isEntityOrDepartmentName(e.name));
   });
 
   const [userRole, setUserRole] = useState<UserRole>('director'); // Default to Director to test the Director view immediately
-  const [currentView, setCurrentView] = useState<'transactions' | 'report' | 'employees' | 'archivist-studio'>('transactions');
+  const [currentView, setCurrentView] = useState<'transactions' | 'daily-situations' | 'report' | 'employees' | 'archivist-studio'>('transactions');
+  const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
@@ -83,6 +115,13 @@ export default function App() {
     transaction: Transaction;
     attachmentIndex: number;
   } | null>(null);
+
+  const handleNavigate = (target: NavigationTarget) => {
+    setNavigationTarget(target);
+    if (target.view) {
+      setCurrentView(target.view);
+    }
+  };
 
   // Detect direct link URL params (e.g. ?role=director)
   useEffect(() => {
@@ -117,26 +156,48 @@ export default function App() {
     }
   }, [employees]);
 
-  // Helper to ensure any employee mentioned in a transaction exists in the employees registry
-  const registerEmployeeIfNew = (employeeName?: string, department?: string, date?: string) => {
+  // Helper to ensure any employee mentioned in a transaction exists in the employees registry as separate individuals
+  const registerEmployeeIfNew = (
+    employeeName?: string,
+    department?: string,
+    date?: string,
+    transactionCategory?: string
+  ) => {
     if (!employeeName || !employeeName.trim()) return;
-    const cleanName = employeeName.trim();
+    const individualNames = splitEmployeeNames(employeeName);
 
     setEmployees((prev) => {
-      const exists = prev.some(
-        (emp) => emp.name.trim().toLowerCase() === cleanName.toLowerCase()
-      );
-      if (exists) return prev;
+      let updated = [...prev];
+      individualNames.forEach((cleanName) => {
+        const trimmed = cleanName.trim();
+        if (!trimmed || isEntityOrDepartmentName(trimmed)) return;
+        const exists = updated.some(
+          (emp) => isEmployeeMatch(emp.name, trimmed)
+        );
+        if (!exists) {
+          const isResearcher =
+            transactionCategory === 'الأساتذة' ||
+            determineEmployeeCategory({ name: trimmed, department }) === 'باحث';
 
-      const newEmp: Employee = {
-        id: `emp-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-        name: cleanName,
-        title: 'منتسب',
-        department: department || 'شعبة الذاتية والإدارية',
-        badgeNumber: `EMP-${Math.floor(1000 + Math.random() * 9000)}`,
-        joinedDate: date || new Date().toISOString().split('T')[0],
-      };
-      return [...prev, newEmp];
+          const newEmp: Employee = {
+            id: `emp-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+            name: trimmed,
+            title: isResearcher ? 'باحث / أستاذ' : 'منتسب',
+            category: isResearcher ? 'باحث' : 'منتسب',
+            department: department && !isEntityOrDepartmentName(department)
+              ? department
+              : isResearcher
+              ? 'مركز الدراسات الافريقية - قسم الأساتذة والبحوث'
+              : 'شعبة الذاتية والإدارية',
+            academicDegree: isResearcher ? 'أستاذ مساعد دكتور' : undefined,
+            specialization: isResearcher ? 'دراسات وبحوث تخصصية' : undefined,
+            badgeNumber: `${isResearcher ? 'RES' : 'EMP'}-${Math.floor(1000 + Math.random() * 9000)}`,
+            joinedDate: date || new Date().toISOString().split('T')[0],
+          };
+          updated = [newEmp, ...updated];
+        }
+      });
+      return updated;
     });
   };
 
@@ -166,9 +227,26 @@ export default function App() {
     }
   };
 
-  // Delete employee from registry
+  // Delete employee from registry and unlink name if referenced
   const handleDeleteEmployee = (empId: string) => {
+    const target = employees.find((e) => e.id === empId);
     setEmployees((prev) => prev.filter((emp) => emp.id !== empId));
+    if (target) {
+      setTransactions((prev) =>
+        prev.map((t) => {
+          if (t.employeeName && isEmployeeMatch(t.employeeName, target.name)) {
+            const remaining = splitEmployeeNames(t.employeeName).filter(
+              (n) => !isEmployeeMatch(n, target.name)
+            );
+            return {
+              ...t,
+              employeeName: remaining.length > 0 ? remaining.join(' ، ') : undefined,
+            };
+          }
+          return t;
+        })
+      );
+    }
   };
 
   // Unread count
@@ -194,18 +272,8 @@ export default function App() {
       setTransactions((prev) =>
         prev.map((item) => (item.id === tr.id ? updatedTr : item))
       );
-      // In Director role: do NOT show the information modal popup!
-      if (userRole === 'director') {
-        setSelectedTransaction(null);
-        return;
-      }
       setSelectedTransaction(updatedTr);
     } else {
-      // In Director role: do NOT show the information modal popup!
-      if (userRole === 'director') {
-        setSelectedTransaction(null);
-        return;
-      }
       setSelectedTransaction(tr);
     }
   };
@@ -307,9 +375,7 @@ export default function App() {
   const handleAddTransaction = (newTr: Transaction) => {
     setTransactions((prev) => [newTr, ...prev]);
     if (newTr.employeeName) {
-      registerEmployeeIfNew(newTr.employeeName, newTr.entity, newTr.date);
-    } else if (newTr.category === 'منتسبين' && newTr.entity) {
-      registerEmployeeIfNew(newTr.entity, 'شعبة الذاتية والإدارية', newTr.date);
+      registerEmployeeIfNew(newTr.employeeName, newTr.entity, newTr.date, newTr.category);
     }
   };
 
@@ -319,9 +385,7 @@ export default function App() {
       prev.map((item) => (item.id === updatedTr.id ? updatedTr : item))
     );
     if (updatedTr.employeeName) {
-      registerEmployeeIfNew(updatedTr.employeeName, updatedTr.entity, updatedTr.date);
-    } else if (updatedTr.category === 'منتسبين' && updatedTr.entity) {
-      registerEmployeeIfNew(updatedTr.entity, 'شعبة الذاتية والإدارية', updatedTr.date);
+      registerEmployeeIfNew(updatedTr.employeeName, updatedTr.entity, updatedTr.date, updatedTr.category);
     }
     if (selectedTransaction && selectedTransaction.id === updatedTr.id) {
       setSelectedTransaction(updatedTr);
@@ -417,9 +481,25 @@ export default function App() {
             onOpenNewModal={() => setIsNewModalOpen(true)}
             userRole={userRole}
             onViewAttachmentDirectly={handleViewAttachmentDirectly}
+            onSaveDirective={handleSaveDirective}
             onEditTransaction={(tr) => setEditingTransaction(tr)}
             onDeleteTransaction={handleDeleteTransaction}
             onNavigateToStudio={() => setCurrentView('archivist-studio')}
+            onNavigate={handleNavigate}
+            navigationTarget={navigationTarget}
+          />
+        )}
+
+        {currentView === 'daily-situations' && (
+          <DailySituationsView
+            transactions={transactions}
+            onSelectTransaction={handleSelectTransaction}
+            onOpenNewDailySituation={() => setIsNewModalOpen(true)}
+            onEditTransaction={(tr) => setEditingTransaction(tr)}
+            onDeleteTransaction={handleDeleteTransaction}
+            onViewAttachment={handleViewAttachmentDirectly}
+            onNavigate={handleNavigate}
+            navigationTarget={navigationTarget}
           />
         )}
 
@@ -438,6 +518,8 @@ export default function App() {
           <MonthlyReportView
             transactions={transactions}
             onSelectTransaction={handleSelectTransaction}
+            onNavigate={handleNavigate}
+            onViewAttachmentDirectly={handleViewAttachmentDirectly}
           />
         )}
 
@@ -450,6 +532,10 @@ export default function App() {
             onUpdateEmployee={handleUpdateEmployee}
             onDeleteEmployee={handleDeleteEmployee}
             userRole={userRole}
+            onNavigate={handleNavigate}
+            navigationTarget={navigationTarget}
+            onViewAttachmentDirectly={handleViewAttachmentDirectly}
+            onSaveTransaction={handleSaveTransaction}
           />
         )}
       </main>

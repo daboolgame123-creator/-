@@ -23,7 +23,8 @@ import {
   Trash2,
   AlertTriangle
 } from 'lucide-react';
-import { Transaction, TransactionStatus, TransactionCategory, TransactionDirection, TransactionPriority, UserRole } from '../types';
+import { Transaction, TransactionStatus, TransactionCategory, TransactionDirection, TransactionPriority, UserRole, NavigationTarget } from '../types';
+import { splitEmployeeNames } from '../utils/employeeUtils';
 
 interface TransactionsListProps {
   transactions: Transaction[];
@@ -38,6 +39,8 @@ interface TransactionsListProps {
   onEditTransaction?: (transaction: Transaction) => void;
   onDeleteTransaction?: (id: string) => void;
   onNavigateToStudio?: () => void;
+  onNavigate?: (target: NavigationTarget) => void;
+  navigationTarget?: NavigationTarget | null;
 }
 
 export const TransactionsList: React.FC<TransactionsListProps> = ({
@@ -53,6 +56,8 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
   onEditTransaction,
   onDeleteTransaction,
   onNavigateToStudio,
+  onNavigate,
+  navigationTarget,
 }) => {
   // 1. General search input
   const [searchTerm, setSearchTerm] = useState('');
@@ -82,6 +87,26 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
 
   // Deletion state for transactions in Archivist mode
   const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
+
+  // Listen to deep navigation targets (Deep Linking requested by Director)
+  React.useEffect(() => {
+    if (!navigationTarget) return;
+    if (navigationTarget.direction) {
+      setDirectionFilter(navigationTarget.direction);
+    }
+    if (navigationTarget.category) {
+      setCategoryFilter(navigationTarget.category);
+    }
+    if (navigationTarget.subType) {
+      setSubTypeFilter(navigationTarget.subType);
+    }
+    if (navigationTarget.searchTerm) {
+      setSearchTerm(navigationTarget.searchTerm);
+    }
+    if (navigationTarget.employeeName) {
+      setEmployeeFilter(navigationTarget.employeeName);
+    }
+  }, [navigationTarget]);
 
   const handleQuickDirective = (transactionId: string, text: string, actionReq: boolean = false) => {
     if (onSaveDirective) {
@@ -743,23 +768,59 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                     <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-md bg-stone-900 dark:bg-amber-400 text-amber-300 dark:text-stone-950">
                       العدد: {tr.number}
                     </span>
-                    <span
-                      className={`text-[11px] font-semibold px-2 py-0.5 rounded ${
+
+                    {/* Interactive Direction Badge (Deep Linking requested by Director) */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDirectionFilter(tr.direction);
+                      }}
+                      className={`text-[11px] font-semibold px-2 py-0.5 rounded cursor-pointer hover:opacity-80 transition-opacity ${
                         tr.direction === 'صادر'
                           ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
                           : tr.direction === 'وارد'
                           ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
                           : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300'
                       }`}
+                      title={`تصفية والاطلاع المباشر على كتب ال${tr.direction}`}
                     >
-                      {tr.direction}
-                    </span>
-                    <span className="text-[11px] font-medium px-2 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-700">
-                      قسم {tr.category}
-                    </span>
-                    <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-stone-200/80 dark:bg-stone-800 text-stone-800 dark:text-stone-200">
-                      {tr.subType}
-                    </span>
+                      {tr.direction} ↗
+                    </button>
+
+                    {/* Interactive Department Badge */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (tr.category === 'منتسبين' && onNavigate) {
+                          onNavigate({ view: 'employees' });
+                        } else {
+                          setCategoryFilter(tr.category);
+                        }
+                      }}
+                      className="text-[11px] font-medium px-2 py-0.5 rounded bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-stone-700 cursor-pointer transition-colors"
+                      title={tr.category === 'منتسبين' ? 'الانتقال مباشرة إلى سجل المنتسبين والباحثين' : `تصفية حسب قسم ${tr.category}`}
+                    >
+                      قسم {tr.category} ↗
+                    </button>
+
+                    {/* Interactive Subtype Badge (Daily Situation / Mission / Badge / etc) */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if ((tr.isDailySituation || tr.subType === 'موقف يومي') && onNavigate) {
+                          onNavigate({ view: 'daily-situations' });
+                        } else {
+                          setSubTypeFilter(tr.subType);
+                        }
+                      }}
+                      className="text-[11px] font-semibold px-2 py-0.5 rounded bg-stone-200/80 dark:bg-stone-800 hover:bg-stone-300 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 cursor-pointer transition-colors"
+                      title={tr.subType === 'موقف يومي' || tr.isDailySituation ? 'الانتقال مباشرة إلى قسم الموقف والتقرير اليومي' : `تصفية حسب نوع المعاملة: ${tr.subType}`}
+                    >
+                      {tr.subType} ↗
+                    </button>
                     {tr.priority && tr.priority !== 'عادي' && (
                       <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${
                         tr.priority === 'عاجل جداً'
@@ -816,19 +877,44 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                     {tr.subject}
                   </h4>
 
-                  {/* Metadata Grid */}
+                  {/* Metadata Grid with Clickable Entities & Employees (Deep Linking) */}
                   <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs pt-1">
-                    <div className="flex items-center gap-1.5 text-stone-700 dark:text-stone-300">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSearchTerm(tr.entity);
+                      }}
+                      className="flex items-center gap-1.5 text-stone-700 dark:text-stone-300 hover:text-amber-600 dark:hover:text-amber-400 cursor-pointer transition-colors"
+                      title={`البحث عن كافة معاملات: ${tr.entity}`}
+                    >
                       <Building2 className="w-4 h-4 text-stone-400 shrink-0" />
                       <span className="text-stone-400 dark:text-stone-500">الجهة المرتبطة:</span>
-                      <span className="font-semibold text-stone-800 dark:text-stone-200">{tr.entity}</span>
-                    </div>
+                      <span className="font-semibold text-stone-800 dark:text-stone-200 underline decoration-stone-300 underline-offset-2">{tr.entity} ↗</span>
+                    </button>
 
                     {tr.employeeName && (
-                      <div className="flex items-center gap-1.5 text-emerald-900 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-1 rounded-md border border-emerald-200/80 dark:border-emerald-800/80">
-                        <User className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                        <span className="text-emerald-700 dark:text-emerald-400 font-medium">المنتسب:</span>
-                        <span className="font-bold">{tr.employeeName}</span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {splitEmployeeNames(tr.employeeName).map((empName, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (onNavigate) {
+                                onNavigate({ view: 'employees', employeeName: empName });
+                              } else {
+                                setEmployeeFilter(empName);
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 text-emerald-900 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 px-2.5 py-1 rounded-md border border-emerald-200/80 dark:border-emerald-800/80 cursor-pointer transition-colors"
+                            title={`الانتقال مباشرة لإضبارة ${empName}`}
+                          >
+                            <User className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            <span className="text-emerald-700 dark:text-emerald-400 font-medium">المنتسب:</span>
+                            <span className="font-bold">{empName} ↗</span>
+                          </button>
+                        ))}
                       </div>
                     )}
 
@@ -1093,17 +1179,23 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                           <span className="px-1.5 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-stone-200 text-[11px] font-mono">
                             {tr.number}
                           </span>
-                          <span
-                            className={`text-[10px] px-1.5 py-0.2 rounded font-medium ${
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDirectionFilter(tr.direction);
+                            }}
+                            className={`text-[10px] px-1.5 py-0.2 rounded font-medium cursor-pointer hover:opacity-80 transition-opacity ${
                               tr.direction === 'صادر'
                                 ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800'
                                 : tr.direction === 'وارد'
                                 ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800'
                                 : 'bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300'
                             }`}
+                            title={`تصفية كتب ال${tr.direction}`}
                           >
-                            {tr.direction}
-                          </span>
+                            {tr.direction} ↗
+                          </button>
                           {tr.priority && tr.priority !== 'عادي' && (
                             <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${
                               tr.priority === 'عاجل جداً'
@@ -1123,17 +1215,49 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
 
                       {/* Entity & Type */}
                       <td className="py-3.5 px-4">
-                        <div className="font-semibold text-stone-800 dark:text-stone-200 flex items-center gap-1">
-                          <Building2 className="w-3 h-3 text-stone-400" />
-                          <span>{tr.entity}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 font-medium">
-                            {tr.subType}
-                          </span>
-                          <span className="text-[10px] text-stone-400 dark:text-stone-500">
-                            (قسم {tr.category})
-                          </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSearchTerm(tr.entity);
+                          }}
+                          className="font-semibold text-stone-800 dark:text-stone-200 flex items-center gap-1 hover:text-amber-600 dark:hover:text-amber-400 cursor-pointer text-right"
+                          title={`البحث عن كافة معاملات: ${tr.entity}`}
+                        >
+                          <Building2 className="w-3 h-3 text-stone-400 shrink-0" />
+                          <span className="underline decoration-stone-300">{tr.entity} ↗</span>
+                        </button>
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if ((tr.isDailySituation || tr.subType === 'موقف يومي') && onNavigate) {
+                                onNavigate({ view: 'daily-situations' });
+                              } else {
+                                setSubTypeFilter(tr.subType);
+                              }
+                            }}
+                            className="text-[10px] px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 text-stone-700 dark:text-stone-300 font-medium cursor-pointer"
+                            title={tr.subType === 'موقف يومي' ? 'الانتقال إلى الموقف اليومي' : `تصفية: ${tr.subType}`}
+                          >
+                            {tr.subType} ↗
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (tr.category === 'منتسبين' && onNavigate) {
+                                onNavigate({ view: 'employees' });
+                              } else {
+                                setCategoryFilter(tr.category);
+                              }
+                            }}
+                            className="text-[10px] text-stone-400 dark:text-stone-500 hover:text-stone-700 cursor-pointer"
+                            title={tr.category === 'منتسبين' ? 'الانتقال إلى سجل المنتسبين' : `تصفية قسم ${tr.category}`}
+                          >
+                            (قسم {tr.category} ↗)
+                          </button>
                         </div>
                       </td>
 
@@ -1150,9 +1274,26 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                           </div>
                         )}
                         {tr.employeeName && (
-                          <div className="mt-1 flex items-center gap-1 text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
-                            <User className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                            <span>المنتسب: {tr.employeeName}</span>
+                          <div className="mt-1 flex items-center gap-1 flex-wrap text-[11px]">
+                            {splitEmployeeNames(tr.employeeName).map((empName, i) => (
+                              <button
+                                key={i}
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (onNavigate) {
+                                    onNavigate({ view: 'employees', employeeName: empName });
+                                  } else {
+                                    setEmployeeFilter(empName);
+                                  }
+                                }}
+                                className="inline-flex items-center gap-1 text-emerald-700 dark:text-emerald-400 hover:underline bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-200/60 cursor-pointer"
+                                title={`الانتقال لإضبارة ${empName}`}
+                              >
+                                <User className="w-3 h-3 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                <span>{empName} ↗</span>
+                              </button>
+                            ))}
                           </div>
                         )}
                       </td>

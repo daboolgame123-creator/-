@@ -13,13 +13,14 @@ import {
   FolderOpen, 
   Edit3,
   Moon,
-  Sun
+  Sun,
+  CalendarCheck2
 } from 'lucide-react';
 import { Transaction, UserRole } from '../types';
 
 interface HeaderProps {
-  currentView: 'transactions' | 'report' | 'employees' | 'archivist-studio';
-  setCurrentView: (view: 'transactions' | 'report' | 'employees' | 'archivist-studio') => void;
+  currentView: 'transactions' | 'daily-situations' | 'report' | 'employees' | 'archivist-studio';
+  setCurrentView: (view: 'transactions' | 'daily-situations' | 'report' | 'employees' | 'archivist-studio') => void;
   onOpenNewModal: () => void;
   transactions: Transaction[];
   userRole: UserRole;
@@ -195,6 +196,21 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </button>
 
+            {/* Daily Report / Situation Tab - FIRST-CLASS PROMINENT SECTION */}
+            <button
+              type="button"
+              id="tab-daily-situations"
+              onClick={() => setCurrentView('daily-situations')}
+              className={`flex items-center gap-1.5 px-3.5 sm:px-5 py-1.5 rounded-lg transition-all cursor-pointer whitespace-nowrap ${
+                currentView === 'daily-situations'
+                  ? 'bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 shadow-xs font-bold ring-1 ring-stone-900/5 dark:ring-white/10'
+                  : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-white/60 dark:hover:bg-stone-800'
+              }`}
+            >
+              <CalendarCheck2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>الموقف والتقرير اليومي</span>
+            </button>
+
             {/* Archivist Studio Tab - prominently available for editing */}
             {userRole === 'archivist' && (
               <button
@@ -237,8 +253,8 @@ export const Header: React.FC<HeaderProps> = ({
                   : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-white/60 dark:hover:bg-stone-800'
               }`}
             >
-              <Users className="w-3.5 h-3.5" />
-              <span>سجل المنتسبين</span>
+              <Users className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <span>سجل المنتسبين والباحثين</span>
             </button>
           </div>
         </div>

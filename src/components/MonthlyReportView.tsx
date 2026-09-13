@@ -17,11 +17,14 @@ import {
   Layers,
   HelpCircle
 } from 'lucide-react';
-import { Transaction } from '../types';
+import { Transaction, NavigationTarget } from '../types';
+import { splitEmployeeNames } from '../utils/employeeUtils';
 
 interface MonthlyReportViewProps {
   transactions: Transaction[];
   onSelectTransaction: (transaction: Transaction) => void;
+  onNavigate?: (target: NavigationTarget) => void;
+  onViewAttachmentDirectly?: (transaction: Transaction, attachmentIndex: number) => void;
 }
 
 const getArabicMonthName = (monthStr: string): string => {
@@ -52,6 +55,8 @@ const getArabicMonthName = (monthStr: string): string => {
 export const MonthlyReportView: React.FC<MonthlyReportViewProps> = ({
   transactions,
   onSelectTransaction,
+  onNavigate,
+  onViewAttachmentDirectly,
 }) => {
   // Dynamically extract all unique months present in transactions
   const availableMonths = useMemo(() => {
@@ -255,11 +260,25 @@ export const MonthlyReportView: React.FC<MonthlyReportViewProps> = ({
         </div>
 
         <div className="p-4 rounded-xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 shadow-xs">
-          <span className="text-xs font-medium text-blue-600 dark:text-blue-400 block mb-1">الكتب الصادرة والواردة</span>
+          <span className="text-xs font-medium text-blue-600 dark:text-blue-400 block mb-1">الكتب الصادرة والواردة (انقر للانتقال)</span>
           <div className="text-lg font-bold text-stone-900 dark:text-stone-100 flex items-center gap-2 mt-1">
-            <span className="text-indigo-600 dark:text-indigo-400">{outgoingTrs.length} صادر</span>
+            <button
+              type="button"
+              onClick={() => onNavigate?.({ view: 'transactions', direction: 'صادر' })}
+              className="text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+              title="الانتقال المباشر لكتب الصادر"
+            >
+              {outgoingTrs.length} صادر ↗
+            </button>
             <span className="text-stone-300 dark:text-stone-600">/</span>
-            <span className="text-amber-600 dark:text-amber-400">{incomingTrs.length} وارد</span>
+            <button
+              type="button"
+              onClick={() => onNavigate?.({ view: 'transactions', direction: 'وارد' })}
+              className="text-amber-600 dark:text-amber-400 hover:underline cursor-pointer"
+              title="الانتقال المباشر لكتب الوارد"
+            >
+              {incomingTrs.length} وارد ↗
+            </button>
           </div>
           <span className="text-[11px] text-stone-400 dark:text-stone-500 mt-1 block">حركة المراسلات الرسمية</span>
         </div>
@@ -483,29 +502,69 @@ export const MonthlyReportView: React.FC<MonthlyReportViewProps> = ({
                     </span>
 
                     {/* Category Tag */}
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold border bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800/60">
-                      القسم: {tr.category}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (tr.category === 'منتسبين' && onNavigate) {
+                          onNavigate({ view: 'employees' });
+                        } else if (onNavigate) {
+                          onNavigate({ view: 'transactions', category: tr.category });
+                        }
+                      }}
+                      className="px-2 py-0.5 rounded-full text-[10px] font-bold border bg-amber-50 dark:bg-amber-950/60 hover:bg-amber-100 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800/60 cursor-pointer transition-colors"
+                      title={tr.category === 'منتسبين' ? 'الانتقال لسجل المنتسبين والباحثين' : `الانتقال لقسم ${tr.category}`}
+                    >
+                      القسم: {tr.category} ↗
+                    </button>
 
                     {/* Direction Tag */}
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300">
-                      {tr.direction}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onNavigate?.({ view: 'transactions', direction: tr.direction });
+                      }}
+                      className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 text-stone-700 dark:text-stone-300 cursor-pointer transition-colors"
+                      title={`الانتقال لكتب ال${tr.direction}`}
+                    >
+                      {tr.direction} ↗
+                    </button>
 
                     {/* SubType */}
-                    <span className="px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 font-medium text-[10px]">
-                      {tr.subType}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if ((tr.isDailySituation || tr.subType === 'موقف يومي') && onNavigate) {
+                          onNavigate({ view: 'daily-situations' });
+                        } else if (onNavigate) {
+                          onNavigate({ view: 'transactions', subType: tr.subType });
+                        }
+                      }}
+                      className="px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 text-stone-700 dark:text-stone-300 font-medium text-[10px] cursor-pointer transition-colors"
+                      title={tr.subType === 'موقف يومي' ? 'الانتقال إلى الموقف اليومي' : `الانتقال لنوع: ${tr.subType}`}
+                    >
+                      {tr.subType} ↗
+                    </button>
 
                     {/* Entity */}
-                    <span className="text-stone-500 dark:text-stone-400 font-medium text-[11px]">
-                      إلى/من: {tr.entity}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onNavigate?.({ view: 'transactions', searchTerm: tr.entity });
+                      }}
+                      className="text-stone-500 dark:text-stone-400 hover:text-amber-600 font-medium text-[11px] cursor-pointer underline decoration-stone-300"
+                      title={`الانتقال لمعاملات: ${tr.entity}`}
+                    >
+                      إلى/من: {tr.entity} ↗
+                    </button>
 
                     {/* Attachments indicator */}
                     {tr.attachments && tr.attachments.length > 0 && (
-                      <span className="px-1.5 py-0.2 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10px] font-bold border border-blue-200 dark:border-blue-800/60">
-                        📎 {tr.attachments.length} مرفقات
+                      <span className="px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 text-[10px] font-bold border border-blue-200 dark:border-blue-800/60 flex items-center gap-1">
+                        <span>📎 {tr.attachments.length} مرفقات</span>
                       </span>
                     )}
                   </div>
@@ -514,11 +573,56 @@ export const MonthlyReportView: React.FC<MonthlyReportViewProps> = ({
                     {tr.subject}
                   </p>
 
+                  {/* Direct Attachment Viewers in Monthly Report */}
+                  {tr.attachments && tr.attachments.length > 0 && (
+                    <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+                      <span className="text-[10px] font-bold text-stone-500 dark:text-stone-400">
+                        معاينة الوثائق:
+                      </span>
+                      {tr.attachments.map((att, attIdx) => (
+                        <button
+                          key={att.id || attIdx}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onViewAttachmentDirectly) {
+                              onViewAttachmentDirectly(tr, attIdx);
+                            } else {
+                              onSelectTransaction(tr);
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-stone-100 hover:bg-amber-100 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 hover:text-stone-950 dark:text-stone-300 dark:hover:text-amber-300 border border-stone-200 dark:border-stone-700 text-[10px] font-semibold transition-all cursor-pointer shadow-2xs hover:scale-105 active:scale-95"
+                          title={`انقر لفتح ومطالعة ${att.name} بدقة عالية`}
+                        >
+                          <Eye className="w-3 h-3 text-amber-600 dark:text-amber-400" />
+                          <span className="max-w-[140px] truncate">{att.name}</span>
+                          <span className="text-[9px] text-stone-400 dark:text-stone-500 font-mono">
+                            ({att.type})
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
                   {tr.employeeName && (
-                    <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1">
-                      <Users className="w-3.5 h-3.5" />
-                      <span>المنتسب المعني: <strong>{tr.employeeName}</strong></span>
-                    </p>
+                    <div className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1.5 flex-wrap">
+                      <Users className="w-3.5 h-3.5 shrink-0" />
+                      <span>المنتسب المعني:</span>
+                      {splitEmployeeNames(tr.employeeName).map((empName, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onNavigate?.({ view: 'employees', employeeName: empName });
+                          }}
+                          className="font-bold underline hover:text-emerald-800 dark:hover:text-emerald-300 cursor-pointer bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded border border-emerald-200/60"
+                          title={`الانتقال لإضبارة ${empName}`}
+                        >
+                          {empName} ↗
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
 

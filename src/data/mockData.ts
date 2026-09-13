@@ -1,14 +1,17 @@
 import { Transaction, Employee } from '../types';
 
 export const INITIAL_EMPLOYEES: Employee[] = [
-  { id: 'emp-1', name: 'أحمد جاسم كريم (اسم تجريبي)', title: 'معاون إداري', department: 'شعبة الخدمات' },
-  { id: 'emp-2', name: 'سجاد حيدر عبد الحسين (اسم تجريبي)', title: 'سائق', department: 'الآليات' },
-  { id: 'emp-3', name: 'محمد باقر ناصر (اسم تجريبي)', title: 'باحث شؤون منتسبين', department: 'الذاتية' },
-  { id: 'emp-4', name: 'علي رضا عبد الزهرة (اسم تجريبي)', title: 'أمين مخزن', department: 'المخازن والموجودات' },
-  { id: 'emp-5', name: 'أمير إبراهيم علي حسن', title: 'باحث في الدراسات الأفريقية', department: 'مركز الدراسات الافريقية' },
-  { id: 'emp-6', name: 'منتظر اياد مهدي عباس', title: 'ملاحظ إداري', department: 'مركز الدراسات الافريقية' },
-  { id: 'emp-7', name: 'شعبان ادم جلو', title: 'باحث ومترجم لغات أفريقية', department: 'مركز الدراسات الافريقية' },
-  { id: 'emp-8', name: 'أ.د. حسن هادي الموسوي', title: 'أستاذ باحث متمرس', department: 'قسم الأساتذة والبحوث' },
+  // 1. قائمة المنتسبين (الكادر الإداري والفني والخدمي)
+  { id: 'emp-1', name: 'أحمد جاسم كريم (اسم تجريبي)', title: 'معاون إداري', department: 'شعبة الخدمات', category: 'منتسب', badgeNumber: 'EMP-1021', joinedDate: '2022-03-15' },
+  { id: 'emp-2', name: 'سجاد حيدر عبد الحسين (اسم تجريبي)', title: 'سائق', department: 'الآليات', category: 'منتسب', badgeNumber: 'EMP-2044', joinedDate: '2023-06-01' },
+  { id: 'emp-4', name: 'علي رضا عبد الزهرة (اسم تجريبي)', title: 'أمين مخزن', department: 'المخازن والموجودات', category: 'منتسب', badgeNumber: 'EMP-3091', joinedDate: '2021-11-20' },
+  { id: 'emp-6', name: 'منتظر اياد مهدي عباس', title: 'ملاحظ إداري', department: 'مركز الدراسات الافريقية', category: 'منتسب', badgeNumber: 'EMP-4180', joinedDate: '2024-01-10' },
+
+  // 2. قائمة الباحثين والأساتذة (الكادر البحثي والأكاديمي)
+  { id: 'emp-3', name: 'محمد باقر ناصر (اسم تجريبي)', title: 'باحث شؤون منتسبين', department: 'الذاتية والبحوث', category: 'باحث', academicDegree: 'ماجستير إدارة وبحوث', specialization: 'إدارة وتوثيق', badgeNumber: 'RES-5012', joinedDate: '2020-09-01' },
+  { id: 'emp-5', name: 'أمير إبراهيم علي حسن', title: 'باحث في الدراسات الأفريقية', department: 'مركز الدراسات الافريقية', category: 'باحث', academicDegree: 'دكتوراه تاريخ ودراسات إقليمية', specialization: 'الدراسات الجيوسياسية والتاريخية', badgeNumber: 'RES-5055', joinedDate: '2019-02-14' },
+  { id: 'emp-7', name: 'شعبان ادم جلو', title: 'باحث ومترجم لغات أفريقية', department: 'مركز الدراسات الافريقية', category: 'باحث', academicDegree: 'ماجستير لغات ولغويات', specialization: 'اللغة السواحيلية والترجمة', badgeNumber: 'RES-6010', joinedDate: '2021-04-05' },
+  { id: 'emp-8', name: 'أ.د. حسن هادي الموسوي', title: 'أستاذ باحث متمرس', department: 'قسم الأساتذة والبحوث', category: 'باحث', academicDegree: 'أستاذ دكتور (بروفيسور)', specialization: 'الفكر الإسلامي والدراسات الاستشراقية', badgeNumber: 'RES-7001', joinedDate: '2018-01-01' },
 ];
 
 export const INITIAL_TRANSACTIONS: Transaction[] = [

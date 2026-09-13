@@ -16,9 +16,14 @@ import {
   Filter, 
   Download,
   AlertCircle,
-  Briefcase
+  Briefcase,
+  Layers,
+  ArrowRight,
+  ExternalLink,
+  ChevronRight,
+  CalendarCheck2
 } from 'lucide-react';
-import { Transaction, DailySituationData, DailySituationEntry } from '../types';
+import { Transaction, DailySituationData, DailySituationEntry, NavigationTarget } from '../types';
 import { DailySituationDocumentModal } from './DailySituationDocumentModal';
 
 interface DailySituationsViewProps {
@@ -28,6 +33,8 @@ interface DailySituationsViewProps {
   onEditTransaction?: (transaction: Transaction) => void;
   onDeleteTransaction?: (id: string) => void;
   onViewAttachment?: (transaction: Transaction, index: number) => void;
+  onNavigate?: (target: NavigationTarget) => void;
+  navigationTarget?: NavigationTarget | null;
 }
 
 export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
@@ -37,10 +44,32 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
   onEditTransaction,
   onDeleteTransaction,
   onViewAttachment,
+  onNavigate,
+  navigationTarget,
 }) => {
+  const [activeTab, setActiveTab] = useState<'forms' | 'time-permissions' | 'leaves'>('forms');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedDateFilter, setSelectedDateFilter] = useState<string>('');
   const [activePreviewDoc, setActivePreviewDoc] = useState<Transaction | null>(null);
+
+  // Sync with deep linking navigation target
+  React.useEffect(() => {
+    if (navigationTarget && navigationTarget.view === 'daily-situations') {
+      if (navigationTarget.searchTerm) {
+        setSearchQuery(navigationTarget.searchTerm);
+      }
+      if (navigationTarget.employeeName) {
+        setSearchQuery(navigationTarget.employeeName);
+      }
+      if (navigationTarget.subType === 'إجازة') {
+        setActiveTab('leaves');
+      } else if (navigationTarget.subType === 'زمنية') {
+        setActiveTab('time-permissions');
+      } else {
+        setActiveTab('forms');
+      }
+    }
+  }, [navigationTarget]);
 
   // Filter transactions that are daily situations
   const dailySituationTransactions = useMemo(() => {
@@ -77,7 +106,6 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
         const inSubject = t.subject.toLowerCase().includes(q);
         const inNumber = t.number.toLowerCase().includes(q);
 
-        // Search in all entries' employee names & details
         const inEntries = data ? (
           data.permanentLeaves?.some((e) => e.employeeName.toLowerCase().includes(q) || e.details.toLowerCase().includes(q)) ||
           data.permanentTimePermissions?.some((e) => e.employeeName.toLowerCase().includes(q) || e.details.toLowerCase().includes(q)) ||
@@ -93,6 +121,120 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
       return true;
     });
   }, [dailySituationTransactions, selectedDateFilter, searchQuery]);
+
+  // Aggregated Time Permissions (الساعات الزمنية) across all daily situations
+  const allTimePermissions = useMemo(() => {
+    const list: Array<{
+      entry: DailySituationEntry;
+      situationDate: string;
+      transactionId: string;
+      docNumber: string;
+      categoryType: 'دائمي' | 'مكافأة / مؤقت';
+    }> = [];
+
+    dailySituationTransactions.forEach((t) => {
+      const d = t.dailySituationData;
+      const date = d?.situationDate || t.date;
+      if (d?.permanentTimePermissions) {
+        d.permanentTimePermissions.forEach((p) => {
+          if (p.employeeName?.trim()) {
+            list.push({
+              entry: p,
+              situationDate: date,
+              transactionId: t.id,
+              docNumber: t.number,
+              categoryType: 'دائمي',
+            });
+          }
+        });
+      }
+      if (d?.temporaryTimePermissions) {
+        d.temporaryTimePermissions.forEach((p) => {
+          if (p.employeeName?.trim()) {
+            list.push({
+              entry: p,
+              situationDate: date,
+              transactionId: t.id,
+              docNumber: t.number,
+              categoryType: 'مكافأة / مؤقت',
+            });
+          }
+        });
+      }
+    });
+
+    return list.sort((a, b) => b.situationDate.localeCompare(a.situationDate));
+  }, [dailySituationTransactions]);
+
+  // Aggregated Leaves (الإجازات الاعتيادية والمرضية والتحويل والدوريات)
+  const allLeavesAndShifts = useMemo(() => {
+    const list: Array<{
+      entry: DailySituationEntry;
+      situationDate: string;
+      transactionId: string;
+      docNumber: string;
+      kind: 'إجازة دائمية' | 'إجازة مؤقتة' | 'تحويل دوام / دورية / إيفاد';
+    }> = [];
+
+    dailySituationTransactions.forEach((t) => {
+      const d = t.dailySituationData;
+      const date = d?.situationDate || t.date;
+      if (d?.permanentLeaves) {
+        d.permanentLeaves.forEach((p) => {
+          if (p.employeeName?.trim()) {
+            list.push({
+              entry: p,
+              situationDate: date,
+              transactionId: t.id,
+              docNumber: t.number,
+              kind: 'إجازة دائمية',
+            });
+          }
+        });
+      }
+      if (d?.temporaryLeaves) {
+        d.temporaryLeaves.forEach((p) => {
+          if (p.employeeName?.trim()) {
+            list.push({
+              entry: p,
+              situationDate: date,
+              transactionId: t.id,
+              docNumber: t.number,
+              kind: 'إجازة مؤقتة',
+            });
+          }
+        });
+      }
+      if (d?.permanentShiftChanges) {
+        d.permanentShiftChanges.forEach((p) => {
+          if (p.employeeName?.trim()) {
+            list.push({
+              entry: p,
+              situationDate: date,
+              transactionId: t.id,
+              docNumber: t.number,
+              kind: 'تحويل دوام / دورية / إيفاد',
+            });
+          }
+        });
+      }
+      if (d?.temporaryShiftChanges) {
+        d.temporaryShiftChanges.forEach((p) => {
+          if (p.employeeName?.trim()) {
+            list.push({
+              entry: p,
+              situationDate: date,
+              transactionId: t.id,
+              docNumber: t.number,
+              kind: 'تحويل دوام / دورية / إيفاد',
+            });
+          }
+        });
+      }
+    });
+
+    return list.sort((a, b) => b.situationDate.localeCompare(a.situationDate));
+  }, [dailySituationTransactions]);
 
   // Statistics calculation across all daily situations
   const stats = useMemo(() => {
@@ -143,32 +285,47 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
       {/* Top Banner and Navigation Bar */}
       <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-amber-500/15 dark:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-700/50 flex items-center justify-center font-bold text-xl shadow-2xs">
-            📋
+          <div className="w-12 h-12 rounded-xl bg-emerald-500/15 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-700/50 flex items-center justify-center font-bold text-xl shadow-2xs">
+            <CalendarCheck2 className="w-6 h-6" />
           </div>
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-lg sm:text-xl font-bold text-stone-900 dark:text-stone-100">
-                سجل الموقف اليومي لمنتسبي المركز
+                سجل الموقف والتقرير اليومي
               </h2>
-              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/60 text-amber-900 dark:text-amber-300 border border-amber-300/60 dark:border-amber-700/50">
-                النموذج الرسمي المعتمد 2026
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                النموذج الرسمي المعتمد لمركز الدراسات
               </span>
             </div>
             <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
-              متابعة يومية لإجازات المنتسبين الدائميين والمكافأة، الساعات الزمنية، وتحويلات الدوام والإيفادات
+              قسم مستقل ومتكامل لإدارة استمارات الموقف اليومي، الساعات الزمنية، الإجازات الاعتيادية والمرضية، مع الربط المباشر بسجل المعاملات وسجل المنتسبين
             </p>
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={onOpenNewDailySituation}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 text-xs sm:text-sm font-bold hover:bg-stone-800 dark:hover:bg-amber-300 transition-all shadow-xs cursor-pointer active:scale-95 shrink-0"
-        >
-          <Plus className="w-4 h-4 text-amber-400 dark:text-stone-950" />
-          <span>+ تنظيم موقف يومي جديد</span>
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {onNavigate && (
+            <button
+              type="button"
+              id="btn-goto-transactions"
+              onClick={() => onNavigate({ view: 'transactions', subType: 'موقف يومي' })}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 text-xs font-bold transition-all border border-stone-300 dark:border-stone-700 cursor-pointer"
+              title="الانتقال إلى قيود الموقف اليومي في سجل المعاملات الرئيسي"
+            >
+              <FileText className="w-3.5 h-3.5" />
+              <span>عرض في سجل المعاملات ↗</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={onOpenNewDailySituation}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 text-xs font-bold hover:bg-stone-800 dark:hover:bg-amber-300 transition-all shadow-xs cursor-pointer active:scale-95 shrink-0"
+          >
+            <Plus className="w-4 h-4 text-amber-400 dark:text-stone-950" />
+            <span>+ تنظيم استمارة موقف جديدة</span>
+          </button>
+        </div>
       </div>
 
       {/* Summary KPI Cards */}
@@ -195,335 +352,453 @@ export const DailySituationsView: React.FC<DailySituationsViewProps> = ({
             {stats.totalLeaves}
           </div>
           <div className="text-[11px] text-stone-400 dark:text-stone-500 mt-1">
-            إجازات دائمية ومكافأة/أجر
+            إجازات دائمية ومكافأة
           </div>
         </div>
 
         <div className="bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 p-3.5 shadow-2xs">
           <div className="flex items-center justify-between text-xs text-stone-500 dark:text-stone-400 mb-1">
             <span>الساعات الزمنية</span>
-            <Clock className="w-4 h-4 text-sky-500" />
+            <Clock className="w-4 h-4 text-amber-500" />
           </div>
-          <div className="text-2xl font-bold font-mono text-sky-600 dark:text-sky-400">
+          <div className="text-2xl font-bold font-mono text-amber-600 dark:text-amber-400">
             {stats.totalTimePermissions}
           </div>
           <div className="text-[11px] text-stone-400 dark:text-stone-500 mt-1">
-            إذن خروج وزمنيات موثقة
+            إذن خروج وزمنيات مسجلة
           </div>
         </div>
 
         <div className="bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 p-3.5 shadow-2xs">
           <div className="flex items-center justify-between text-xs text-stone-500 dark:text-stone-400 mb-1">
-            <span>إيفادات وتحويل دوام</span>
-            <Briefcase className="w-4 h-4 text-amber-500" />
+            <span>المنتسبون بالموقف</span>
+            <Briefcase className="w-4 h-4 text-indigo-500" />
           </div>
-          <div className="text-2xl font-bold font-mono text-amber-600 dark:text-amber-400">
-            {stats.totalMissionsAndShifts}
+          <div className="text-2xl font-bold font-mono text-indigo-600 dark:text-indigo-400">
+            {stats.uniqueEmployeesCount}
           </div>
           <div className="text-[11px] text-stone-400 dark:text-stone-500 mt-1">
-            انفكاك أو إيفاد أو دورية
+            منتسب موثق في القيود
           </div>
         </div>
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 p-3 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="relative w-full sm:w-80">
-          <input
-            type="text"
-            placeholder="بحث باسم المنتسب، الملاحظة، أو رقم القيد..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pr-9 pl-3 py-2 text-xs rounded-lg border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-900 dark:text-stone-100 placeholder-stone-400 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
-          />
-          <Search className="w-4 h-4 text-stone-400 absolute right-3 top-2.5" />
-        </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
-          {/* Date Filter */}
-          <div className="flex items-center gap-1.5 bg-stone-50 dark:bg-stone-800 px-3 py-1.5 rounded-lg border border-stone-200 dark:border-stone-700 text-xs">
-            <Calendar className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
-            <span className="text-stone-600 dark:text-stone-300 font-semibold">تاريخ الموقف:</span>
-            <select
-              value={selectedDateFilter}
-              onChange={(e) => setSelectedDateFilter(e.target.value)}
-              className="bg-transparent font-bold text-stone-900 dark:text-stone-100 outline-hidden cursor-pointer"
-            >
-              <option value="">كافة التواريخ ({dailySituationTransactions.length})</option>
-              {availableDates.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {selectedDateFilter && (
-            <button
-              type="button"
-              onClick={() => setSelectedDateFilter('')}
-              className="text-xs text-amber-600 dark:text-amber-400 hover:underline px-1 cursor-pointer"
-            >
-              إلغاء التصفية
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Daily Situations List */}
-      {filteredSituations.length === 0 ? (
-        <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 p-12 text-center shadow-xs">
-          <div className="w-16 h-16 rounded-2xl bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto mb-3 text-2xl">
-            📋
-          </div>
-          <h3 className="text-base font-bold text-stone-900 dark:text-stone-100 mb-1">
-            لا توجد استمارات موقف يومي مسجلة تطابق البحث
-          </h3>
-          <p className="text-xs text-stone-500 dark:text-stone-400 max-w-md mx-auto mb-4">
-            يمكنك إدخال استمارة الموقف اليومي لمنتسبي المركز الآن وتوثيق كافة الإجازات والساعات الزمنية والإيفادات.
-          </p>
+      {/* THREE DEDICATED SECTIONS / SUB-TABS AS REQUESTED BY USER */}
+      <div className="bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 p-1.5 shadow-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 text-xs">
           <button
             type="button"
-            onClick={onOpenNewDailySituation}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 text-xs font-bold hover:bg-stone-800 dark:hover:bg-amber-300 transition-colors shadow-xs cursor-pointer"
+            id="tab-sub-daily-forms"
+            onClick={() => setActiveTab('forms')}
+            className={`py-2 px-3 rounded-lg font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+              activeTab === 'forms'
+                ? 'bg-stone-900 dark:bg-stone-800 text-amber-300 ring-1 ring-amber-400/40 shadow-xs'
+                : 'text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800'
+            }`}
           >
-            <Plus className="w-4 h-4 text-amber-400 dark:text-stone-950" />
-            <span>تنظيم موقف يومي جديد</span>
+            <CalendarCheck2 className="w-4 h-4" />
+            <span>استمارات المواقف اليومية (حسب التاريخ)</span>
+            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-stone-200 dark:bg-stone-700 text-stone-700 dark:text-stone-300">
+              {dailySituationTransactions.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            id="tab-sub-time-permissions"
+            onClick={() => setActiveTab('time-permissions')}
+            className={`py-2 px-3 rounded-lg font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+              activeTab === 'time-permissions'
+                ? 'bg-amber-600 dark:bg-amber-500 text-white dark:text-stone-950 shadow-xs ring-1 ring-amber-400/50'
+                : 'text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800'
+            }`}
+          >
+            <Clock className="w-4 h-4" />
+            <span>قسم الإجازات والساعات الزمنية</span>
+            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-amber-100 dark:bg-stone-700 text-amber-900 dark:text-amber-300 font-bold">
+              {allTimePermissions.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            id="tab-sub-leaves-register"
+            onClick={() => setActiveTab('leaves')}
+            className={`py-2 px-3 rounded-lg font-bold transition-all cursor-pointer flex items-center justify-center gap-2 ${
+              activeTab === 'leaves'
+                ? 'bg-emerald-700 text-white shadow-xs ring-1 ring-emerald-400/50'
+                : 'text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            <span>سجل الإجازات الاعتيادية والإيفادات</span>
+            <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-stone-700 text-emerald-900 dark:text-emerald-300 font-bold">
+              {allLeavesAndShifts.length}
+            </span>
           </button>
         </div>
-      ) : (
+      </div>
+
+      {/* TAB 1: DAILY SITUATION FORMS (BY DATE) */}
+      {activeTab === 'forms' && (
         <div className="space-y-4">
-          {filteredSituations.map((tr) => {
-            const data: DailySituationData | undefined = tr.dailySituationData;
-            const dateStr = data?.situationDate || tr.date;
-            
-            const permLeaves = data?.permanentLeaves || [];
-            const permTimes = data?.permanentTimePermissions || [];
-            const permShifts = data?.permanentShiftChanges || [];
-            const tempLeaves = data?.temporaryLeaves || [];
-            const tempTimes = data?.temporaryTimePermissions || [];
-            const tempShifts = data?.temporaryShiftChanges || [];
+          {/* Search & Date Filters Bar */}
+          <div className="bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 p-3.5 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+            <div className="relative flex-1 min-w-[220px]">
+              <Search className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-stone-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="ابحث في المواقف اليومية (اسم منتسب، رقم كتاب، تاريخ، تفاصيل)..."
+                className="w-full pl-3 pr-9 py-2 rounded-lg border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-xs text-stone-900 dark:text-stone-100 focus:ring-2 focus:ring-amber-500 outline-hidden"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
+                >
+                  <Filter className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
 
-            const totalEntries = 
-              permLeaves.length + 
-              permTimes.length + 
-              permShifts.length + 
-              tempLeaves.length + 
-              tempTimes.length + 
-              tempShifts.length;
+            <div className="flex items-center gap-2 flex-wrap text-xs">
+              <span className="text-stone-500 dark:text-stone-400 font-medium">تصفية التاريخ:</span>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-800">
+                <Calendar className="w-3.5 h-3.5 text-stone-400" />
+                <select
+                  value={selectedDateFilter}
+                  onChange={(e) => setSelectedDateFilter(e.target.value)}
+                  className="bg-transparent font-bold text-stone-900 dark:text-stone-100 outline-hidden cursor-pointer"
+                >
+                  <option value="">كافة التواريخ ({dailySituationTransactions.length})</option>
+                  {availableDates.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            return (
-              <div
-                key={tr.id}
-                className="bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 shadow-2xs hover:shadow-md transition-all overflow-hidden"
+              {selectedDateFilter && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedDateFilter('')}
+                  className="text-xs text-amber-600 dark:text-amber-400 hover:underline px-1 cursor-pointer"
+                >
+                  إلغاء التصفية
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Forms List */}
+          {filteredSituations.length === 0 ? (
+            <div className="bg-white dark:bg-stone-900 rounded-2xl border border-stone-200 dark:border-stone-800 p-12 text-center shadow-xs">
+              <CalendarCheck2 className="w-12 h-12 text-stone-300 dark:text-stone-600 mx-auto mb-3" />
+              <h3 className="text-base font-bold text-stone-900 dark:text-stone-100 mb-1">
+                لا توجد استمارات موقف يومي مسجلة تطابق البحث
+              </h3>
+              <p className="text-xs text-stone-500 dark:text-stone-400 max-w-md mx-auto mb-4">
+                يمكنك إدخال استمارة الموقف اليومي لمنتسبي المركز وتوثيق كافة الإجازات والساعات الزمنية والإيفادات.
+              </p>
+              <button
+                type="button"
+                onClick={onOpenNewDailySituation}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 text-xs font-bold hover:bg-stone-800 transition-colors shadow-xs cursor-pointer"
               >
-                {/* Header Row */}
-                <div className="p-4 sm:p-5 border-b border-stone-100 dark:border-stone-800/80 bg-stone-50/70 dark:bg-stone-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-start sm:items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-amber-500 text-stone-950 flex items-center justify-center font-bold text-base shrink-0 shadow-2xs">
-                      📋
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-bold text-sm sm:text-base text-stone-900 dark:text-stone-100">
-                          {tr.subject || `الموقف اليومي لمنتسبي المركز بتاريخ ${dateStr}`}
-                        </h3>
-                        <span className="font-mono text-xs font-bold px-2.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/60 text-amber-900 dark:text-amber-300 border border-amber-300/60">
-                          بتاريخ: {dateStr}
-                        </span>
+                <Plus className="w-4 h-4" />
+                <span>تنظيم موقف يومي جديد</span>
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredSituations.map((tr) => {
+                const data: DailySituationData | undefined = tr.dailySituationData;
+                const dateStr = data?.situationDate || tr.date;
+
+                const permLeaves = data?.permanentLeaves || [];
+                const permTimes = data?.permanentTimePermissions || [];
+                const permShifts = data?.permanentShiftChanges || [];
+                const tempLeaves = data?.temporaryLeaves || [];
+                const tempTimes = data?.temporaryTimePermissions || [];
+                const tempShifts = data?.temporaryShiftChanges || [];
+
+                return (
+                  <div
+                    key={tr.id}
+                    className="bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 shadow-2xs hover:shadow-md transition-all overflow-hidden"
+                  >
+                    {/* Header Row */}
+                    <div className="p-4 sm:p-5 border-b border-stone-100 dark:border-stone-800/80 bg-stone-50/70 dark:bg-stone-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-start sm:items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-500 text-white flex items-center justify-center font-bold text-base shrink-0 shadow-2xs">
+                          <CalendarCheck2 className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="font-bold text-sm sm:text-base text-stone-900 dark:text-stone-100">
+                              {tr.subject || `الموقف اليومي لمنتسبي المركز بتاريخ ${dateStr}`}
+                            </h3>
+                            <span className="font-mono text-xs font-bold px-2.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-300 border border-emerald-300/60">
+                              بتاريخ: {dateStr}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-stone-500 dark:text-stone-400 mt-1 flex-wrap">
+                            <span>العدد: <strong className="font-mono text-stone-700 dark:text-stone-300">{tr.number}</strong></span>
+                            <span>•</span>
+                            <span>القيد: <strong className="font-mono text-stone-700 dark:text-stone-300">{tr.sequence}</strong></span>
+                            <span>•</span>
+                            <span>الجهة: {data?.departmentName || tr.entity || 'مركز الدراسات الافريقية'}</span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3 text-xs text-stone-500 dark:text-stone-400 mt-1 flex-wrap">
-                        <span>العدد: <strong className="font-mono text-stone-700 dark:text-stone-300">{tr.number}</strong></span>
-                        <span>•</span>
-                        <span>القيد: <strong className="font-mono text-stone-700 dark:text-stone-300">{tr.sequence}</strong></span>
-                        <span>•</span>
-                        <span>الجهة: {data?.departmentName || tr.entity || 'مركز الدراسات الافريقية'}</span>
+
+                      {/* Actions */}
+                      <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => setActivePreviewDoc(tr)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 text-xs font-bold hover:bg-stone-800 dark:hover:bg-amber-300 transition-colors shadow-2xs cursor-pointer active:scale-95"
+                          title="عرض الاستمارة الرسمية الكاملة المعتمدة والطباعة (طراز 9.jpg)"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>عرض الاستمارة الرسمية والطباعة</span>
+                        </button>
+
+                        {onSelectTransaction && (
+                          <button
+                            type="button"
+                            onClick={() => onSelectTransaction(tr)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 hover:bg-stone-100 text-stone-700 dark:text-stone-300 text-xs font-medium transition-colors cursor-pointer"
+                            title="عرض التفاصيل في سجل المعاملات"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>تفاصيل المعاملة</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Quick Breakdown Grid of Entries with Clickable Employee Names */}
+                    <div className="p-4 sm:p-5 space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                        {/* 1. Time Permissions Section */}
+                        <div className="p-3 bg-amber-50/40 dark:bg-amber-950/20 rounded-xl border border-amber-200/70 dark:border-amber-800/40 space-y-2">
+                          <div className="flex items-center justify-between text-xs font-bold text-amber-900 dark:text-amber-300">
+                            <span className="flex items-center gap-1.5">
+                              <Clock className="w-3.5 h-3.5 text-amber-600" />
+                              الساعات الزمنية (إذن خروج)
+                            </span>
+                            <span className="font-mono text-[11px] px-2 py-0.2 rounded-full bg-amber-100 dark:bg-amber-900/60">
+                              {permTimes.length + tempTimes.length} قيود
+                            </span>
+                          </div>
+
+                          {permTimes.length + tempTimes.length === 0 ? (
+                            <p className="text-[11px] text-stone-400">لا توجد ساعات زمنية مسجلة لهذا اليوم</p>
+                          ) : (
+                            <div className="space-y-1 max-h-36 overflow-y-auto">
+                              {[...permTimes, ...tempTimes].map((e, idx) => (
+                                <div
+                                  key={idx}
+                                  className="flex items-center justify-between text-xs bg-white dark:bg-stone-800/80 p-2 rounded-lg border border-stone-200/60 dark:border-stone-700/60"
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() => onNavigate?.({ view: 'employees', employeeName: e.employeeName })}
+                                    className="font-bold text-stone-800 dark:text-stone-200 hover:text-amber-600 dark:hover:text-amber-400 text-right cursor-pointer"
+                                    title="الانتقال إلى إضبارة المنتسب"
+                                  >
+                                    👤 {e.employeeName} ↗
+                                  </button>
+                                  <span className="text-[11px] text-amber-800 dark:text-amber-300 font-mono bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded">
+                                    {e.details}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 2. Leaves & Shifts Section */}
+                        <div className="p-3 bg-emerald-50/40 dark:bg-emerald-950/20 rounded-xl border border-emerald-200/70 dark:border-emerald-800/40 space-y-2">
+                          <div className="flex items-center justify-between text-xs font-bold text-emerald-900 dark:text-emerald-300">
+                            <span className="flex items-center gap-1.5">
+                              <Users className="w-3.5 h-3.5 text-emerald-600" />
+                              الإجازات الاعتيادية والمرضية والتحويل
+                            </span>
+                            <span className="font-mono text-[11px] px-2 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950/60">
+                              {permLeaves.length + tempLeaves.length + permShifts.length + tempShifts.length} قيود
+                            </span>
+                          </div>
+
+                          {permLeaves.length + tempLeaves.length + permShifts.length + tempShifts.length === 0 ? (
+                            <p className="text-[11px] text-stone-400">لا توجد إجازات مسجلة لهذا اليوم</p>
+                          ) : (
+                            <div className="space-y-1 max-h-36 overflow-y-auto">
+                              {[...permLeaves, ...tempLeaves, ...permShifts, ...tempShifts].map((e, idx) => (
+                                <div
+                                  key={idx}
+                                  className="flex items-center justify-between text-xs bg-white dark:bg-stone-800/80 p-2 rounded-lg border border-stone-200/60 dark:border-stone-700/60"
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() => onNavigate?.({ view: 'employees', employeeName: e.employeeName })}
+                                    className="font-bold text-stone-800 dark:text-stone-200 hover:text-emerald-600 dark:hover:text-emerald-400 text-right cursor-pointer"
+                                    title="الانتقال إلى إضبارة المنتسب"
+                                  >
+                                    👤 {e.employeeName} ↗
+                                  </button>
+                                  <span className="text-[11px] text-emerald-800 dark:text-emerald-300 font-medium bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded">
+                                    {e.details}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
-                  {/* Actions */}
-                  <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 flex-wrap">
+      {/* TAB 2: COMPREHENSIVE TIME PERMISSIONS REGISTER */}
+      {activeTab === 'time-permissions' && (
+        <div className="bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 p-4 sm:p-5 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-100 dark:border-stone-800">
+            <div>
+              <h3 className="text-sm sm:text-base font-bold text-stone-900 dark:text-stone-100 flex items-center gap-2">
+                <Clock className="w-4 h-4 text-amber-600" />
+                <span>سجل الإجازات والساعات الزمنية الشامل للمنتسبين</span>
+              </h3>
+              <p className="text-xs text-stone-500 dark:text-stone-400">
+                يعرض كافة الساعات الزمنية وإذن الخروج المسجلة في استمارات الموقف مع التواريخ والمدد من وإلى
+              </p>
+            </div>
+            <span className="text-xs font-bold px-3 py-1 rounded-full bg-amber-100 text-amber-900 dark:bg-amber-950/60 dark:text-amber-300">
+              إجمالي الساعات الزمنية: {allTimePermissions.length} إذن
+            </span>
+          </div>
+
+          {allTimePermissions.length === 0 ? (
+            <div className="p-8 text-center text-xs text-stone-400 bg-stone-50 dark:bg-stone-800/40 rounded-xl border border-dashed border-stone-200 dark:border-stone-800">
+              لا توجد ساعات زمنية مسجلة حالياً
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {allTimePermissions.map((item, idx) => (
+                <div
+                  key={idx}
+                  className="p-3 rounded-xl border border-stone-200 dark:border-stone-700/80 bg-white dark:bg-stone-800/60 flex flex-wrap items-center justify-between gap-2.5 hover:border-amber-400 transition-colors"
+                >
+                  <div className="flex items-center gap-3 flex-wrap">
                     <button
                       type="button"
-                      onClick={() => setActivePreviewDoc(tr)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 text-xs font-bold hover:bg-stone-800 dark:hover:bg-amber-300 transition-colors shadow-2xs cursor-pointer active:scale-95"
-                      title="عرض الاستمارة الرسمية كما وردت في كتاب المركز وطباعتها أصولياً"
+                      onClick={() => onNavigate?.({ view: 'employees', employeeName: item.entry.employeeName })}
+                      className="font-bold text-xs text-stone-900 dark:text-stone-100 hover:text-amber-600 dark:hover:text-amber-400 cursor-pointer"
+                      title="الانتقال إلى إضبارة المنتسب"
                     >
-                      <Printer className="w-3.5 h-3.5" />
-                      <span>عرض الاستمارة والطباعة 🖨️</span>
+                      👤 {item.entry.employeeName} ↗
                     </button>
-
-                    {onEditTransaction && (
-                      <button
-                        type="button"
-                        onClick={() => onEditTransaction(tr)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-200 text-xs font-bold border border-stone-200 dark:border-stone-700 transition-colors cursor-pointer"
-                        title="تعديل بيانات الموقف اليومي"
-                      >
-                        <Edit3 className="w-3.5 h-3.5 text-stone-600 dark:text-stone-400" />
-                        <span>تعديل</span>
-                      </button>
-                    )}
-
-                    {onDeleteTransaction && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (window.confirm('هل أنت متأكد من حذف استمارة هذا الموقف اليومي؟')) {
-                            onDeleteTransaction(tr.id);
-                          }
-                        }}
-                        className="p-1.5 rounded-lg text-rose-500 hover:text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-transparent hover:border-rose-200 transition-colors cursor-pointer"
-                        title="حذف الموقف"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Body: Division Summary Badges & Quick Table */}
-                <div className="p-4 sm:p-5 space-y-4">
-                  {/* Category Counts Chips */}
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    <span className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-semibold">
-                      إجازات دائمية: <strong>{permLeaves.length}</strong>
+                    <span className="text-[11px] px-2 py-0.5 rounded bg-stone-100 dark:bg-stone-700 text-stone-700 dark:text-stone-300 font-medium">
+                      نوع التعيين: {item.categoryType}
                     </span>
-                    <span className="px-2.5 py-1 rounded-lg bg-sky-50 dark:bg-sky-950/50 text-sky-800 dark:text-sky-300 border border-sky-200 dark:border-sky-800 font-semibold">
-                      ساعات دائمي: <strong>{permTimes.length}</strong>
-                    </span>
-                    <span className="px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 font-semibold">
-                      تحويل/إيفاد دائمي: <strong>{permShifts.length}</strong>
-                    </span>
-                    <span className="px-2.5 py-1 rounded-lg bg-purple-50 dark:bg-purple-950/50 text-purple-800 dark:text-purple-300 border border-purple-200 dark:border-purple-800 font-semibold">
-                      إجازات مكافأة/أجر: <strong>{tempLeaves.length}</strong>
-                    </span>
-                    <span className="px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-800 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 font-semibold">
-                      ساعات مكافأة/أجر: <strong>{tempTimes.length}</strong>
-                    </span>
-                    <span className="px-2.5 py-1 rounded-lg bg-orange-50 dark:bg-orange-950/50 text-orange-800 dark:text-orange-300 border border-orange-200 dark:border-orange-800 font-semibold">
-                      تحويل/إيفاد مكافأة/أجر: <strong>{tempShifts.length}</strong>
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 border border-amber-300/60">
+                      ⏰ {item.entry.details}
                     </span>
                   </div>
 
-                  {/* Summary of items inside this daily situation */}
-                  {totalEntries > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                      {/* Section 1: الدائمي */}
-                      <div className="bg-stone-50 dark:bg-stone-800/40 rounded-lg p-3 border border-stone-200/80 dark:border-stone-800 space-y-2">
-                        <div className="font-bold text-stone-900 dark:text-stone-100 flex items-center justify-between border-b border-stone-200 dark:border-stone-700 pb-1.5">
-                          <span>الموقف اليومي (للمنتسب الدائم)</span>
-                          <span className="text-[11px] text-stone-500 font-mono">
-                            ({permLeaves.length + permTimes.length + permShifts.length}) قيود
-                          </span>
-                        </div>
-                        <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                          {permLeaves.map((l, i) => (
-                            <div key={`pl-${i}`} className="flex items-center justify-between gap-2 p-1.5 rounded bg-white dark:bg-stone-800 border border-stone-100 dark:border-stone-700/60">
-                              <span className="font-bold text-stone-900 dark:text-stone-200">{l.employeeName}</span>
-                              <span className="text-[11px] text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded font-medium">
-                                إجازة: {l.details}
-                              </span>
-                            </div>
-                          ))}
-                          {permTimes.map((t, i) => (
-                            <div key={`pt-${i}`} className="flex items-center justify-between gap-2 p-1.5 rounded bg-white dark:bg-stone-800 border border-stone-100 dark:border-stone-700/60">
-                              <span className="font-bold text-stone-900 dark:text-stone-200">{t.employeeName}</span>
-                              <span className="text-[11px] text-sky-700 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/50 px-2 py-0.5 rounded font-medium">
-                                زمنية: {t.details}
-                              </span>
-                            </div>
-                          ))}
-                          {permShifts.map((s, i) => (
-                            <div key={`ps-${i}`} className="flex items-center justify-between gap-2 p-1.5 rounded bg-white dark:bg-stone-800 border border-stone-100 dark:border-stone-700/60">
-                              <span className="font-bold text-stone-900 dark:text-stone-200">{s.employeeName}</span>
-                              <span className="text-[11px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded font-medium">
-                                تحويل/إيفاد: {s.details}
-                              </span>
-                            </div>
-                          ))}
-                          {permLeaves.length === 0 && permTimes.length === 0 && permShifts.length === 0 && (
-                            <div className="text-center text-stone-400 text-[11px] py-1">
-                              لا توجد قيود مسجلة للمنتسب الدائم بهذا اليوم
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Section 2: المكافأة والأجر والمتطوع */}
-                      <div className="bg-stone-50 dark:bg-stone-800/40 rounded-lg p-3 border border-stone-200/80 dark:border-stone-800 space-y-2">
-                        <div className="font-bold text-stone-900 dark:text-stone-100 flex items-center justify-between border-b border-stone-200 dark:border-stone-700 pb-1.5">
-                          <span>منتسبو المكافأة والأجر اليومي والمتطوع</span>
-                          <span className="text-[11px] text-stone-500 font-mono">
-                            ({tempLeaves.length + tempTimes.length + tempShifts.length}) قيود
-                          </span>
-                        </div>
-                        <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                          {tempLeaves.map((l, i) => (
-                            <div key={`tl-${i}`} className="flex items-center justify-between gap-2 p-1.5 rounded bg-white dark:bg-stone-800 border border-stone-100 dark:border-stone-700/60">
-                              <span className="font-bold text-stone-900 dark:text-stone-200">{l.employeeName}</span>
-                              <span className="text-[11px] text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/50 px-2 py-0.5 rounded font-medium">
-                                إجازة: {l.details}
-                              </span>
-                            </div>
-                          ))}
-                          {tempTimes.map((t, i) => (
-                            <div key={`tt-${i}`} className="flex items-center justify-between gap-2 p-1.5 rounded bg-white dark:bg-stone-800 border border-stone-100 dark:border-stone-700/60">
-                              <span className="font-bold text-stone-900 dark:text-stone-200">{t.employeeName}</span>
-                              <span className="text-[11px] text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded font-medium">
-                                زمنية: {t.details}
-                              </span>
-                            </div>
-                          ))}
-                          {tempShifts.map((s, i) => (
-                            <div key={`ts-${i}`} className="flex items-center justify-between gap-2 p-1.5 rounded bg-white dark:bg-stone-800 border border-stone-100 dark:border-stone-700/60">
-                              <span className="font-bold text-stone-900 dark:text-stone-200">{s.employeeName}</span>
-                              <span className="text-[11px] text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/50 px-2 py-0.5 rounded font-medium">
-                                انفكاك/إيفاد: {s.details}
-                              </span>
-                            </div>
-                          ))}
-                          {tempLeaves.length === 0 && tempTimes.length === 0 && tempShifts.length === 0 && (
-                            <div className="text-center text-stone-400 text-[11px] py-1">
-                              لا توجد قيود مسجلة لمنتسبي المكافأة بهذا اليوم
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-xs text-stone-500 dark:text-stone-400 italic bg-stone-50 dark:bg-stone-800/40 p-2.5 rounded-lg border border-dashed border-stone-200 dark:border-stone-800 text-center">
-                      استمارة موقف يومي فارغة (دوام طبيعي كامل دون إجازات أو غيابات مسجلة).
-                    </div>
-                  )}
-
-                  {/* Attachments Footer */}
-                  {tr.attachments && tr.attachments.length > 0 && (
-                    <div className="pt-2 border-t border-stone-100 dark:border-stone-800 flex flex-wrap items-center justify-between gap-2 text-xs">
-                      <div className="flex items-center gap-1.5 text-stone-600 dark:text-stone-300 font-semibold">
-                        <Paperclip className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                        <span>الملحقات والمستندات الممسوحة ({tr.attachments.length}):</span>
-                      </div>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {tr.attachments.map((att, idx) => (
-                          <button
-                            key={att.id}
-                            type="button"
-                            onClick={() => onViewAttachment?.(tr, idx)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-stone-100 dark:bg-stone-800 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-stone-700 dark:text-stone-300 text-[11px] font-medium border border-stone-200 dark:border-stone-700 transition-colors cursor-pointer"
-                          >
-                            <Eye className="w-3 h-3 text-stone-500" />
-                            <span>{att.name}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-3 text-xs text-stone-400 flex-wrap">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5" />
+                      تاريخ الموقف: <strong>{item.situationDate}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onNavigate?.({ view: 'transactions', searchTerm: item.docNumber })}
+                      className="text-amber-600 hover:underline text-[11px] font-mono cursor-pointer"
+                    >
+                      رقم الموقف: {item.docNumber}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB 3: COMPREHENSIVE LEAVES & SHIFTS REGISTER */}
+      {activeTab === 'leaves' && (
+        <div className="bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 p-4 sm:p-5 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-100 dark:border-stone-800">
+            <div>
+              <h3 className="text-sm sm:text-base font-bold text-stone-900 dark:text-stone-100 flex items-center gap-2">
+                <Users className="w-4 h-4 text-emerald-600" />
+                <span>سجل الإجازات الاعتيادية والمرضية والتحويل والإيفادات</span>
+              </h3>
+              <p className="text-xs text-stone-500 dark:text-stone-400">
+                يعرض كافة الإجازات اليومية المسجلة في استمارات الموقف مع التواريخ والمدد
+              </p>
+            </div>
+            <span className="text-xs font-bold px-3 py-1 rounded-full bg-emerald-100 text-emerald-900 dark:bg-emerald-950/60 dark:text-emerald-300">
+              إجمالي القيود: {allLeavesAndShifts.length}
+            </span>
+          </div>
+
+          {allLeavesAndShifts.length === 0 ? (
+            <div className="p-8 text-center text-xs text-stone-400 bg-stone-50 dark:bg-stone-800/40 rounded-xl border border-dashed border-stone-200 dark:border-stone-800">
+              لا توجد إجازات مسجلة حالياً
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {allLeavesAndShifts.map((item, idx) => (
+                <div
+                  key={idx}
+                  className="p-3 rounded-xl border border-stone-200 dark:border-stone-700/80 bg-white dark:bg-stone-800/60 flex flex-wrap items-center justify-between gap-2.5 hover:border-emerald-400 transition-colors"
+                >
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => onNavigate?.({ view: 'employees', employeeName: item.entry.employeeName })}
+                      className="font-bold text-xs text-stone-900 dark:text-stone-100 hover:text-emerald-600 dark:hover:text-emerald-400 cursor-pointer"
+                      title="الانتقال إلى إضبارة المنتسب"
+                    >
+                      👤 {item.entry.employeeName} ↗
+                    </button>
+                    <span className="text-[11px] px-2 py-0.5 rounded bg-stone-100 dark:bg-stone-700 text-stone-700 dark:text-stone-300 font-medium">
+                      التصنيف: {item.kind}
+                    </span>
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-900 dark:text-emerald-300 border border-emerald-300/60">
+                      📄 {item.entry.details}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-3 text-xs text-stone-400 flex-wrap">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5" />
+                      بتاريخ: <strong>{item.situationDate}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => onNavigate?.({ view: 'transactions', searchTerm: item.docNumber })}
+                      className="text-emerald-600 hover:underline text-[11px] font-mono cursor-pointer"
+                    >
+                      رقم الموقف: {item.docNumber}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

@@ -104,6 +104,8 @@ export interface Transaction {
   };
 }
 
+export type EmployeeCategory = 'منتسب' | 'باحث';
+
 export interface Employee {
   id: string;
   name: string;
@@ -111,4 +113,18 @@ export interface Employee {
   department: string;
   badgeNumber?: string;
   joinedDate?: string;
+  category?: EmployeeCategory; // 'منتسب' (كادر إداري/فني) أو 'باحث' (أستاذ/باحث)
+  academicDegree?: string;      // اللقب العلمي للأساتذة (أ.د، دكتور، باحث...)
+  specialization?: string;      // الاختصاص أو الشعبة البحثية
+}
+
+export interface NavigationTarget {
+  view?: 'transactions' | 'employees' | 'daily-situations' | 'report' | 'archivist-studio';
+  direction?: TransactionDirection | 'الكل';
+  category?: TransactionCategory | 'الكل';
+  subType?: string;
+  employeeName?: string;
+  entity?: string;
+  searchTerm?: string;
+  employeeCategory?: EmployeeCategory;
 }
