@@ -20,7 +20,11 @@ import {
   Clock,
   Sparkles,
   Layers,
-  ArrowRight
+  ArrowRight,
+  ShieldCheck,
+  Lock,
+  Globe,
+  Users
 } from 'lucide-react';
 import {
   Transaction,
@@ -29,7 +33,10 @@ import {
   TransactionStatus,
   TransactionPriority,
   Attachment,
-  AttachmentType
+  AttachmentType,
+  AccessScope,
+  ACCESS_SCOPE_OPTIONS,
+  Employee
 } from '../../types';
 import { processUploadedFile, getAttachmentPreviewUrl } from '../../utils/attachmentUtils';
 
@@ -40,6 +47,7 @@ interface ArchivistEditorModalProps {
   onSaveTransaction: (updatedTransaction: Transaction) => void;
   onDeleteTransaction?: (id: string) => void;
   employees: string[];
+  allEmployees?: Employee[];
   onOpenLightbox?: (attachment: Attachment, attachments: Attachment[], index: number) => void;
 }
 
@@ -62,8 +70,15 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
   onSaveTransaction,
   onDeleteTransaction,
   employees,
+  allEmployees,
   onOpenLightbox,
 }) => {
+  // Normalize employees list with ids
+  const normalizedEmployeesList: Array<{ id: string; name: string; department?: string }> = 
+    allEmployees && allEmployees.length > 0
+      ? allEmployees.map((e) => ({ id: e.id, name: e.name, department: e.department }))
+      : employees.map((name, i) => ({ id: `emp-${i}-${name}`, name, department: 'عام' }));
+
   // Form Fields State - hooks must always be called unconditionally at the top level
   const [number, setNumber] = useState(transaction?.number || '');
   const [sequence, setSequence] = useState(transaction?.sequence || '');
@@ -77,6 +92,10 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
   const [priority, setPriority] = useState<TransactionPriority>(transaction?.priority || 'عادي');
   const [status, setStatus] = useState<TransactionStatus>(transaction?.status || 'جديد');
   const [notes, setNotes] = useState(transaction?.notes || '');
+
+  // Access Scope / Visibility & Employee IDs
+  const [visibility, setVisibility] = useState<AccessScope>(transaction?.visibility || 'Administrative');
+  const [employeeIds, setEmployeeIds] = useState<string[]>(transaction?.employeeIds || []);
 
   // Specific Details
   const [purpose, setPurpose] = useState(transaction?.specificDetails?.purpose || '');
@@ -121,6 +140,20 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
       setDestination(transaction.specificDetails?.destination || '');
       setVehicle(transaction.specificDetails?.vehicle || '');
       setAmount(transaction.specificDetails?.amount || '');
+
+      setVisibility(transaction.visibility || 'Administrative');
+      
+      // If employeeIds is already present, use it; otherwise match existing employeeName
+      if (transaction.employeeIds && transaction.employeeIds.length > 0) {
+        setEmployeeIds(transaction.employeeIds);
+      } else if (transaction.employeeName) {
+        const matched = normalizedEmployeesList
+          .filter((emp) => transaction.employeeName!.includes(emp.name))
+          .map((emp) => emp.id);
+        setEmployeeIds(matched);
+      } else {
+        setEmployeeIds([]);
+      }
 
       setAttachments(
         transaction.attachments && transaction.attachments.length > 0
@@ -275,6 +308,29 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
     }, 3000);
   };
 
+  const handleToggleEmployee = (id: string) => {
+    setEmployeeIds((prev) => {
+      if (prev.includes(id)) {
+        return prev.filter((item) => item !== id);
+      } else {
+        return [...prev, id];
+      }
+    });
+  };
+
+  const handleSyncEmployeeNamesToField = () => {
+    const names = employeeIds
+      .map((id) => {
+        const found = normalizedEmployeesList.find((e) => e.id === id);
+        return found ? found.name : id;
+      })
+      .filter(Boolean);
+    if (names.length > 0) {
+      setEmployeeName(names.join('، '));
+      showToast('تمت مزامنة أسماء المنتسبين المحددين في حقل المعاملة ✓');
+    }
+  };
+
   // Save All Changes
   const handleSaveAll = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -290,6 +346,8 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
       entity: entity.trim() || 'عام / غير محدد',
       subject: subject.trim() || 'بدون موضوع',
       employeeName: employeeName.trim() || undefined,
+      employeeIds: employeeIds.length > 0 ? employeeIds : undefined,
+      visibility,
       priority,
       status,
       notes: notes.trim() || undefined,
@@ -839,6 +897,172 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
                 placeholder="أي ملاحظات داخلية لمسؤول الذاتية..."
                 className="w-full px-3 py-2 text-xs rounded-lg border border-stone-300 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 outline-hidden font-medium"
               />
+            </div>
+          </div>
+
+          {/* SECTION 3: نطاق الخصوصية وصلاحيات الرؤية وربط المنتسبين (Access Scope & RBAC) */}
+          <div className="bg-white rounded-xl border border-stone-200 p-4 sm:p-5 space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 flex-wrap gap-2">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-900 flex items-center justify-center">
+                  <ShieldCheck className="w-4 h-4 text-amber-700" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-stone-900">
+                    نطاق الخصوصية وصلاحيات الرؤية (Access Scope)
+                  </h3>
+                  <p className="text-[11px] text-stone-500">
+                    تحديد من يملك صلاحية الاطلاع على هذا المستند وقراءته داخل المنظومة
+                  </p>
+                </div>
+              </div>
+              {ACCESS_SCOPE_OPTIONS[visibility] && (
+                <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${ACCESS_SCOPE_OPTIONS[visibility].badgeColor}`}>
+                  النطاق المعتمد: {ACCESS_SCOPE_OPTIONS[visibility].label}
+                </span>
+              )}
+            </div>
+
+            {/* Scope Selection Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {(Object.keys(ACCESS_SCOPE_OPTIONS) as AccessScope[]).map((scopeKey) => {
+                const opt = ACCESS_SCOPE_OPTIONS[scopeKey];
+                const isSelected = visibility === scopeKey;
+                return (
+                  <button
+                    key={scopeKey}
+                    type="button"
+                    onClick={() => setVisibility(scopeKey)}
+                    className={`p-3 rounded-xl border text-right transition-all cursor-pointer flex flex-col justify-between ${
+                      isSelected
+                        ? 'border-amber-500 bg-amber-50/70 ring-2 ring-amber-400/50 shadow-xs'
+                        : 'border-stone-200 hover:border-stone-300 hover:bg-stone-50'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-1 mb-1.5">
+                        <span className="font-bold text-xs text-stone-900 flex items-center gap-1.5">
+                          {scopeKey === 'PublicToEmployees' && <Globe className="w-3.5 h-3.5 text-emerald-600" />}
+                          {scopeKey === 'SpecificEmployees' && <Users className="w-3.5 h-3.5 text-blue-600" />}
+                          {scopeKey === 'Administrative' && <FileText className="w-3.5 h-3.5 text-stone-600" />}
+                          {scopeKey === 'DirectorOnly' && <Lock className="w-3.5 h-3.5 text-rose-600" />}
+                          <span>{opt.label}</span>
+                        </span>
+                        {isSelected ? (
+                          <CheckCircle2 className="w-4 h-4 text-amber-600 shrink-0" />
+                        ) : (
+                          <div className="w-3.5 h-3.5 rounded-full border border-stone-300" />
+                        )}
+                      </div>
+                      <p className="text-[11px] text-stone-500 leading-relaxed">
+                        {opt.description}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Linked Employees Multi-Select */}
+            <div className={`p-4 rounded-xl border transition-colors ${
+              visibility === 'SpecificEmployees'
+                ? 'bg-blue-50/40 border-blue-200 ring-1 ring-blue-300/50'
+                : 'bg-stone-50/60 border-stone-200'
+            }`}>
+              <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                <div className="flex items-center gap-1.5">
+                  <Users className="w-4 h-4 text-blue-600" />
+                  <label className="text-xs font-bold text-stone-800">
+                    ربط المنتسبين المعنيين بالمعاملة (Multi-Select Employee Linking):
+                  </label>
+                </div>
+                {visibility === 'SpecificEmployees' && (
+                  <span className="text-[11px] font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full border border-blue-200">
+                    مطلوب: يحدد من يرى هذا الكتاب حصراً في حسابه
+                  </span>
+                )}
+              </div>
+
+              <p className="text-[11px] text-stone-500 mb-3">
+                اختر منتسباً أو أكثر لربط قيودهم بهذا الكتاب. عند اختيار نطاق "خاص بالمعنيين"، لن يظهر الكتاب في حساب أي منتسب سوى من يتم تحديده هنا.
+              </p>
+
+              {/* Selected Chips */}
+              <div className="flex flex-wrap gap-1.5 mb-3 min-h-[36px] p-2.5 rounded-lg bg-white border border-stone-200">
+                {employeeIds.length === 0 ? (
+                  <span className="text-xs text-stone-400 self-center">
+                    لم يتم ربط أي منتسب بعد (انقر على أسماء المنتسبين في القائمة أدناه لتحديدهم)
+                  </span>
+                ) : (
+                  employeeIds.map((id) => {
+                    const emp = normalizedEmployeesList.find((e) => e.id === id);
+                    const name = emp ? emp.name : id;
+                    return (
+                      <span
+                        key={id}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-100 text-blue-900 text-xs font-bold border border-blue-200 shadow-2xs"
+                      >
+                        <span>{name}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleEmployee(id)}
+                          className="hover:text-rose-600 cursor-pointer p-0.5 rounded hover:bg-blue-200 transition-colors"
+                          title="إزالة هذا المنتسب من الربط"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Quick Selectable Pills List */}
+              <div>
+                <span className="text-[11px] font-semibold text-stone-600 block mb-1.5">
+                  قائمة الكوادر والمنتسبين (انقر لتفعيل / إلغاء التحديد):
+                </span>
+                <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto p-2.5 bg-white rounded-lg border border-stone-200">
+                  {normalizedEmployeesList.map((emp) => {
+                    const isSelected = employeeIds.includes(emp.id);
+                    return (
+                      <button
+                        key={emp.id}
+                        type="button"
+                        onClick={() => handleToggleEmployee(emp.id)}
+                        className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer flex items-center gap-1 ${
+                          isSelected
+                            ? 'bg-blue-600 text-white font-bold shadow-2xs'
+                            : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+                        }`}
+                      >
+                        <span>{emp.name}</span>
+                        {emp.department && emp.department !== 'عام' && (
+                          <span className={`text-[10px] opacity-75 ${isSelected ? 'text-blue-100' : 'text-stone-500'}`}>
+                            ({emp.department})
+                          </span>
+                        )}
+                        {isSelected && <Check className="w-3 h-3 ml-0.5 stroke-[2.5]" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {employeeIds.length > 0 && (
+                <div className="mt-2.5 flex items-center justify-between flex-wrap gap-2 pt-2 border-t border-stone-200/70">
+                  <span className="text-[11px] text-stone-500 font-medium">
+                    تم ربط {employeeIds.length} منتسب بهذا السجل
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleSyncEmployeeNamesToField}
+                    className="text-xs text-amber-700 hover:text-amber-900 font-bold underline cursor-pointer"
+                  >
+                    مزامنة الأسماء المحددة مع حقل "اسم المنتسب المعني" أعلاه ↗
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

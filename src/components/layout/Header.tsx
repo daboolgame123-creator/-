@@ -16,7 +16,7 @@ import {
   Sun,
   CalendarCheck2
 } from 'lucide-react';
-import { Transaction, UserRole } from '../../types';
+import { Transaction, UserRole, roleHasPermission } from '../../types';
 
 interface HeaderProps {
   currentView: 'transactions' | 'daily-situations' | 'report' | 'employees' | 'archivist-studio';
@@ -97,6 +97,7 @@ export const Header: React.FC<HeaderProps> = ({
                       ? 'bg-amber-400 text-stone-950 font-bold shadow-xs'
                       : 'text-stone-400 hover:text-white'
                   }`}
+                  title="الاطلاع على جميع المعاملات وتوجيه الهوامش"
                 >
                   <UserCheck className="w-3 h-3" />
                   <span>السيد مدير المركز</span>
@@ -111,9 +112,40 @@ export const Header: React.FC<HeaderProps> = ({
                       ? 'bg-stone-200 text-stone-900 font-bold shadow-xs'
                       : 'text-stone-400 hover:text-white'
                   }`}
+                  title="إدخال وتعديل وأرشفة الكتب والمعاملات"
                 >
                   <FolderOpen className="w-3 h-3" />
-                  <span>مسؤول الذاتية والأرشفة</span>
+                  <span>مسؤول الذاتية</span>
+                </button>
+
+                <button
+                  type="button"
+                  id="role-employee"
+                  onClick={() => setUserRole('employee')}
+                  className={`flex items-center gap-1 px-2.5 py-0.5 rounded-md transition-all cursor-pointer ${
+                    userRole === 'employee'
+                      ? 'bg-emerald-400 text-stone-950 font-bold shadow-xs'
+                      : 'text-stone-400 hover:text-white'
+                  }`}
+                  title="حساب منتسب (اختبار رؤية الكتب العامة والخاصة بالمنتسب فقط)"
+                >
+                  <Users className="w-3 h-3" />
+                  <span>منتسب (د. أمير إبراهيم)</span>
+                </button>
+
+                <button
+                  type="button"
+                  id="role-admin"
+                  onClick={() => setUserRole('admin')}
+                  className={`flex items-center gap-1 px-2.5 py-0.5 rounded-md transition-all cursor-pointer ${
+                    userRole === 'admin'
+                      ? 'bg-indigo-400 text-stone-950 font-bold shadow-xs'
+                      : 'text-stone-400 hover:text-white'
+                  }`}
+                  title="مدير المنظومة (صلاحيات كاملة وإدارة النظام)"
+                >
+                  <ShieldCheck className="w-3 h-3" />
+                  <span>مدير النظام</span>
                 </button>
               </div>
             </div>
@@ -160,15 +192,17 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </button>
 
-            <button
-              type="button"
-              id="btn-add-transaction"
-              onClick={onOpenNewModal}
-              className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 text-xs font-bold hover:bg-stone-800 dark:hover:bg-amber-300 transition-colors shadow-xs cursor-pointer"
-            >
-              <Plus className="w-4 h-4 text-amber-400 dark:text-stone-950" />
-              <span>إدخال معاملة جديدة</span>
-            </button>
+            {roleHasPermission(userRole, 'transactions.create') && (
+              <button
+                type="button"
+                id="btn-add-transaction"
+                onClick={onOpenNewModal}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-stone-900 dark:bg-amber-400 text-white dark:text-stone-950 text-xs font-bold hover:bg-stone-800 dark:hover:bg-amber-300 transition-colors shadow-xs cursor-pointer"
+              >
+                <Plus className="w-4 h-4 text-amber-400 dark:text-stone-950" />
+                <span>إدخال معاملة جديدة</span>
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -212,7 +246,7 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
 
             {/* Archivist Studio Tab - prominently available for editing */}
-            {userRole === 'archivist' && (
+            {roleHasPermission(userRole, 'archive.manage') && (
               <button
                 type="button"
                 id="tab-archivist-studio"

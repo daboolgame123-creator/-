@@ -43,6 +43,7 @@ export interface TransactionSpecificDetails {
 }
 
 import type { DailySituationData } from './dailySituation';
+import type { AccessScope } from './accessScope';
 
 export interface Transaction {
   id: string;
@@ -55,7 +56,26 @@ export interface Transaction {
   subType: string;
   entity: string;
   subject: string;
+  
+  /**
+   * ربط المعاملة بالمنتسبين (Domain Model Enhancement):
+   * - employeeIds: مصفوفة المعرفات لعلاقة متعددة (1-to-N أو N-to-N)
+   * - employeeName: محفوظ بالكامل للتوافق التراجعي (Backward Compatibility)
+   */
+  employeeIds?: string[];
   employeeName?: string;
+
+  /**
+   * نطاق الرؤية والأذونات (Access Scope / Visibility):
+   * يفصل بين "من يرتبط بالمعاملة" وبين "من يحق له الاطلاع عليها"
+   */
+  visibility?: AccessScope;
+
+  /**
+   * نطاق الاستهداف الإداري (اختياري)
+   */
+  targetScope?: 'all' | 'specific' | 'department' | 'none';
+
   priority?: TransactionPriority;
   directorDirective?: DirectorDirective;
   status: TransactionStatus;

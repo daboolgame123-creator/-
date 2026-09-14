@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Header } from './components/layout';
 import { 
   TransactionsList, 
@@ -14,12 +14,12 @@ import {
   ArchivistEditorModal 
 } from './components/modals';
 import { INITIAL_TRANSACTIONS, INITIAL_EMPLOYEES } from './data/mockData';
-import { Transaction, TransactionStatus, Employee, UserRole, Attachment, NavigationTarget } from './types';
+import { Transaction, TransactionStatus, Employee, UserRole, Attachment, NavigationTarget, AccessScope, User } from './types';
+import { StorageService, AuthService } from './services';
+import { canUserAccessTransaction } from './core/models';
 import { splitEmployeeNames, isEntityOrDepartmentName, determineEmployeeCategory, isEmployeeMatch } from './utils/employeeUtils';
 import { ShieldCheck, Info, Bell, CheckCheck, UserCheck, Eye, Check, Edit3 } from 'lucide-react';
 
-const STORAGE_KEY = 'zatiya_prototype_transactions_v2';
-const EMPLOYEES_STORAGE_KEY = 'zatiya_prototype_employees_v3';
 const DARK_MODE_STORAGE_KEY = 'zatiya_prototype_dark_mode_v1';
 
 export default function App() {
@@ -50,66 +50,24 @@ export default function App() {
     }
   }, [isDarkMode]);
 
-  const [transactions, setTransactions] = useState<Transaction[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      }
-    } catch {
-      // fallback to initial
-    }
-    return INITIAL_TRANSACTIONS;
-  });
-
   const [employees, setEmployees] = useState<Employee[]>(() => {
-    try {
-      const saved = localStorage.getItem(EMPLOYEES_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Normalize and break up any composite multi-name employees from previous entries
-          const cleaned: Employee[] = [];
-          const seenNames = new Set<string>();
-
-          parsed.forEach((emp: Employee) => {
-            if (isEntityOrDepartmentName(emp.name)) return;
-            const splitNames = splitEmployeeNames(emp.name || '');
-            if (splitNames.length <= 1) {
-              const nameLower = (emp.name || '').trim().toLowerCase();
-              if (nameLower && !seenNames.has(nameLower)) {
-                seenNames.add(nameLower);
-                cleaned.push(emp);
-              }
-            } else {
-              splitNames.forEach((n, idx) => {
-                if (isEntityOrDepartmentName(n)) return;
-                const nameLower = n.trim().toLowerCase();
-                if (nameLower && !seenNames.has(nameLower)) {
-                  seenNames.add(nameLower);
-                  cleaned.push({
-                    ...emp,
-                    id: `${emp.id}-part-${idx}-${Math.floor(Math.random() * 1000)}`,
-                    name: n.trim(),
-                    badgeNumber: emp.badgeNumber ? `${emp.badgeNumber}-${idx + 1}` : `EMP-${Math.floor(1000 + Math.random() * 9000)}`,
-                  });
-                }
-              });
-            }
-          });
-          return cleaned.length > 0 ? cleaned : INITIAL_EMPLOYEES.filter((e) => !isEntityOrDepartmentName(e.name));
-        }
-      }
-    } catch {
-      // fallback
-    }
-    return INITIAL_EMPLOYEES.filter((e) => !isEntityOrDepartmentName(e.name));
+    return StorageService.loadEmployees();
   });
 
-  const [userRole, setUserRole] = useState<UserRole>('director'); // Default to Director to test the Director view immediately
+  const [transactions, setTransactions] = useState<Transaction[]>(() => {
+    return StorageService.loadTransactions(employees);
+  });
+
+  // Sync to storage on state change
+  useEffect(() => {
+    StorageService.saveTransactions(transactions);
+  }, [transactions]);
+
+  useEffect(() => {
+    StorageService.saveEmployees(employees);
+  }, [employees]);
+
+  const [userRole, setUserRole] = useState<UserRole>('director'); // Default to Director
   const [currentView, setCurrentView] = useState<'transactions' | 'daily-situations' | 'report' | 'employees' | 'archivist-studio'>('transactions');
   const [navigationTarget, setNavigationTarget] = useState<NavigationTarget | null>(null);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
@@ -120,6 +78,20 @@ export default function App() {
     transaction: Transaction;
     attachmentIndex: number;
   } | null>(null);
+
+  // Compute current User object & accessible transactions strictly per RBAC and Access Scope
+  const currentUser: User = useMemo(() => AuthService.getUserForRole(userRole), [userRole]);
+
+  const visibleTransactions = useMemo(() => {
+    return AuthService.filterTransactionsForUser(currentUser, transactions);
+  }, [currentUser, transactions]);
+
+  // If user role switches to employee while in archivist-studio, redirect to transactions
+  useEffect(() => {
+    if (userRole === 'employee' && currentView === 'archivist-studio') {
+      setCurrentView('transactions');
+    }
+  }, [userRole, currentView]);
 
   const handleNavigate = (target: NavigationTarget) => {
     setNavigationTarget(target);
@@ -145,20 +117,12 @@ export default function App() {
 
   // Sync to local storage for local persistence
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions));
-    } catch {
-      // ignore
-    }
+    StorageService.saveTransactions(transactions);
   }, [transactions]);
 
   // Sync employees to local storage
   useEffect(() => {
-    try {
-      localStorage.setItem(EMPLOYEES_STORAGE_KEY, JSON.stringify(employees));
-    } catch {
-      // ignore
-    }
+    StorageService.saveEmployees(employees);
   }, [employees]);
 
   // Helper to ensure any employee mentioned in a transaction exists in the employees registry as separate individuals
@@ -468,7 +432,7 @@ export default function App() {
           setNewModalDefaultMode('normal');
           setIsNewModalOpen(true);
         }}
-        transactions={transactions}
+        transactions={visibleTransactions}
         userRole={userRole}
         setUserRole={setUserRole}
         onMarkAllAsRead={handleMarkAllAsRead}
@@ -481,7 +445,7 @@ export default function App() {
         {/* Dynamic Views */}
         {currentView === 'transactions' && (
           <TransactionsList
-            transactions={transactions}
+            transactions={visibleTransactions}
             onSelectTransaction={handleSelectTransaction}
             onToggleReadStatus={handleToggleReadStatus}
             onMarkAllAsRead={handleMarkAllAsRead}
@@ -503,7 +467,7 @@ export default function App() {
 
         {currentView === 'daily-situations' && (
           <DailySituationsView
-            transactions={transactions}
+            transactions={visibleTransactions}
             onSelectTransaction={handleSelectTransaction}
             onOpenNewDailySituation={() => {
               setNewModalDefaultMode('daily-situation');
@@ -533,7 +497,7 @@ export default function App() {
 
         {currentView === 'report' && (
           <MonthlyReportView
-            transactions={transactions}
+            transactions={visibleTransactions}
             onSelectTransaction={handleSelectTransaction}
             onNavigate={handleNavigate}
             onViewAttachmentDirectly={handleViewAttachmentDirectly}
@@ -543,7 +507,7 @@ export default function App() {
         {currentView === 'employees' && (
           <EmployeesView
             employees={employees}
-            transactions={transactions}
+            transactions={visibleTransactions}
             onSelectTransaction={handleSelectTransaction}
             onAddEmployee={handleAddEmployee}
             onUpdateEmployee={handleUpdateEmployee}
@@ -577,6 +541,7 @@ export default function App() {
           onSaveTransaction={handleSaveTransaction}
           onDeleteTransaction={handleDeleteTransaction}
           employees={employees.map((e) => e.name)}
+          allEmployees={employees}
           onOpenLightbox={(att, atts, idx) => {
             if (editingTransaction) {
               setDirectAttachmentView({

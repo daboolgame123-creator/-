@@ -1,5 +1,6 @@
 import { Transaction, Employee } from '../core/models';
 import { INITIAL_TRANSACTIONS, INITIAL_EMPLOYEES } from '../data/mockData';
+import { AuthService } from './authService';
 
 export const STORAGE_KEYS = {
   TRANSACTIONS: 'zatiya_prototype_transactions_v2',
@@ -8,19 +9,21 @@ export const STORAGE_KEYS = {
 } as const;
 
 export class StorageService {
-  static loadTransactions(): Transaction[] {
+  static loadTransactions(existingEmployees?: Employee[]): Transaction[] {
+    const employees = existingEmployees || this.loadEmployees();
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+          // تطبيع البيانات وتثبيت الصلاحيات وعلاقات المنتسبين للبيانات المخزنة مسبقاً
+          return parsed.map((tr) => AuthService.normalizeTransaction(tr, employees));
         }
       }
     } catch (e) {
       console.error('Error loading transactions from localStorage:', e);
     }
-    return INITIAL_TRANSACTIONS;
+    return INITIAL_TRANSACTIONS.map((tr) => AuthService.normalizeTransaction(tr, employees));
   }
 
   static saveTransactions(transactions: Transaction[]): void {

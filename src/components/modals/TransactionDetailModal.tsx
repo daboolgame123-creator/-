@@ -22,9 +22,10 @@ import {
   Download, 
   Image as ImageIcon,
   UploadCloud,
-  CheckCheck
+  CheckCheck,
+  ShieldCheck
 } from 'lucide-react';
-import { Transaction, TransactionStatus, Attachment, AttachmentType } from '../../types';
+import { Transaction, TransactionStatus, Attachment, AttachmentType, ACCESS_SCOPE_OPTIONS } from '../../types';
 import { processUploadedFile, getAttachmentPreviewUrl } from '../../utils/attachmentUtils';
 import { ImageLightboxModal } from './ImageLightboxModal';
 
@@ -265,6 +266,11 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                   {transaction.priority === 'عاجل جداً' ? '🚨 عاجل جداً' : transaction.priority === 'هام' ? '⚠️ هام' : '🔒 سري وخاص'}
                 </span>
               )}
+              {transaction.visibility && ACCESS_SCOPE_OPTIONS[transaction.visibility] && (
+                <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${ACCESS_SCOPE_OPTIONS[transaction.visibility].badgeColor}`}>
+                  نطاق الصلاحية: {ACCESS_SCOPE_OPTIONS[transaction.visibility].label}
+                </span>
+              )}
             </div>
             <h2 className="text-base sm:text-xl font-bold text-stone-900 dark:text-stone-100 mt-1">
               {transaction.subject}
@@ -370,6 +376,23 @@ export const TransactionDetailModal: React.FC<TransactionDetailModalProps> = ({
                     <User className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> المنتسب المرتبط بالمعاملة
                   </span>
                   <p className="font-bold text-stone-900 dark:text-stone-100">{transaction.employeeName}</p>
+                </div>
+              )}
+
+              {/* Access Scope / Privacy Level Card */}
+              {transaction.visibility && ACCESS_SCOPE_OPTIONS[transaction.visibility] && (
+                <div className="p-3 rounded-lg border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800/60 space-y-1 sm:col-span-2">
+                  <span className="text-xs font-semibold text-stone-500 dark:text-stone-400 flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5 text-amber-500" /> نطاق الصلاحيات والخصوصية (Access Scope)
+                  </span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded border ${ACCESS_SCOPE_OPTIONS[transaction.visibility].badgeColor}`}>
+                      {ACCESS_SCOPE_OPTIONS[transaction.visibility].label}
+                    </span>
+                    <span className="text-xs text-stone-600 dark:text-stone-300">
+                      {ACCESS_SCOPE_OPTIONS[transaction.visibility].description}
+                    </span>
+                  </div>
                 </div>
               )}
 

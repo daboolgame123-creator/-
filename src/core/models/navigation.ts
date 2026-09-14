@@ -1,7 +1,15 @@
 import { TransactionDirection, TransactionCategory } from './transaction';
 import { EmployeeCategory } from './employee';
+import { RoleId } from './permission';
 
-export type UserRole = 'director' | 'archivist'; // السيد مدير المركز | مسؤول الذاتية والأرشفة
+/**
+ * أدوار المستخدمين في النظام:
+ * 'director': السيد مدير المركز
+ * 'archivist': مسؤول الذاتية والأرشفة
+ * 'employee': المنتسب / الباحث (عرض محدود ومخصص)
+ * 'admin': مدير النظام الشامل
+ */
+export type UserRole = RoleId;
 
 export interface NavigationTarget {
   view?: 'transactions' | 'employees' | 'daily-situations' | 'report' | 'archivist-studio';

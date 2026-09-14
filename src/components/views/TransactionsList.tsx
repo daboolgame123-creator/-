@@ -23,7 +23,17 @@ import {
   Trash2,
   AlertTriangle
 } from 'lucide-react';
-import { Transaction, TransactionStatus, TransactionCategory, TransactionDirection, TransactionPriority, UserRole, NavigationTarget } from '../../types';
+import { 
+  Transaction, 
+  TransactionStatus, 
+  TransactionCategory, 
+  TransactionDirection, 
+  TransactionPriority, 
+  UserRole, 
+  NavigationTarget, 
+  ACCESS_SCOPE_OPTIONS, 
+  roleHasPermission 
+} from '../../types';
 import { splitEmployeeNames } from '../../utils/employeeUtils';
 
 interface TransactionsListProps {
@@ -254,6 +264,28 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
 
   return (
     <div className="space-y-4">
+      {/* Active Persona Banner for Employee Role */}
+      {userRole === 'employee' && (
+        <div className="bg-emerald-50/90 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-2xs">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 flex items-center justify-center font-bold shrink-0">
+              <User className="w-4 h-4" />
+            </div>
+            <div>
+              <p className="font-bold text-emerald-950 dark:text-emerald-200">
+                أنت مسجل حالياً بحساب المنتسب: د. أمير إبراهيم علي حسن (باحث / تدريسي)
+              </p>
+              <p className="text-emerald-700 dark:text-emerald-400 text-[11px] mt-0.5">
+                المعاملات والكتب الإدارية المعروضة أدناه مفلترة تلقائياً وفق نطاق الصلاحيات والخصوصية (الكتب العامة للمنتسبين، والكتب والقرارات الخاصة بك بالاسم).
+              </p>
+            </div>
+          </div>
+          <span className="self-start sm:self-auto inline-flex items-center gap-1 font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-100/70 dark:bg-emerald-900/60 px-2.5 py-1 rounded-md text-[11px] border border-emerald-300/60">
+            صلاحية: منتسب (اطلاع فقط)
+          </span>
+        </div>
+      )}
+
       {/* Search and Filters Bar */}
       <div className="bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800 p-4 shadow-xs space-y-3.5">
         {/* Main Row: Single Simple Search Box + "بحث متقدم / خاص ⚙️" Button */}
@@ -832,6 +864,16 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                         {tr.priority === 'عاجل جداً' ? '🚨 عاجل جداً' : tr.priority === 'هام' ? '⚠️ هام' : '🔒 سري وخاص'}
                       </span>
                     )}
+
+                    {/* Access Scope / Privacy Badge */}
+                    {tr.visibility && ACCESS_SCOPE_OPTIONS[tr.visibility] && (
+                      <span
+                        className={`text-[11px] font-bold px-2 py-0.5 rounded border ${ACCESS_SCOPE_OPTIONS[tr.visibility].badgeColor}`}
+                        title={ACCESS_SCOPE_OPTIONS[tr.visibility].description}
+                      >
+                        {ACCESS_SCOPE_OPTIONS[tr.visibility].label}
+                      </span>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-3 flex-wrap">
@@ -1026,21 +1068,33 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                     onClick={(e) => e.stopPropagation()}
                   >
                     <span className="text-stone-500 dark:text-stone-400 font-medium text-[11px]">حالة الإنجاز:</span>
-                    <select
-                      value={tr.status}
-                      onChange={(e) => onUpdateStatus(tr.id, e.target.value as TransactionStatus)}
-                      className={`text-xs font-semibold px-3 py-1.5 rounded-lg border outline-hidden transition-colors cursor-pointer ${
+                    {roleHasPermission(userRole, 'transactions.edit') ? (
+                      <select
+                        value={tr.status}
+                        onChange={(e) => onUpdateStatus(tr.id, e.target.value as TransactionStatus)}
+                        className={`text-xs font-semibold px-3 py-1.5 rounded-lg border outline-hidden transition-colors cursor-pointer ${
+                          tr.status === 'جديد'
+                            ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 font-bold'
+                            : tr.status === 'قيد الإنجاز'
+                            ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800 font-bold'
+                            : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 font-bold'
+                        }`}
+                      >
+                        <option value="جديد">جديد</option>
+                        <option value="قيد الإنجاز">قيد الإنجاز</option>
+                        <option value="مكتمل">مكتمل</option>
+                      </select>
+                    ) : (
+                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-md border ${
                         tr.status === 'جديد'
                           ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800 font-bold'
                           : tr.status === 'قيد الإنجاز'
                           ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800 font-bold'
                           : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 font-bold'
-                      }`}
-                    >
-                      <option value="جديد">جديد</option>
-                      <option value="قيد الإنجاز">قيد الإنجاز</option>
-                      <option value="مكتمل">مكتمل</option>
-                    </select>
+                      }`}>
+                        {tr.status}
+                      </span>
+                    )}
 
                     {tr.createdAt && (
                       <span className="text-stone-400 dark:text-stone-500 text-[11px] pr-2 border-r border-stone-200 dark:border-stone-700">
@@ -1050,8 +1104,8 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2 flex-wrap">
-                    {/* Archivist Edit & Delete Actions */}
-                    {userRole === 'archivist' && onEditTransaction && (
+                    {/* Archivist / Admin Edit & Delete Actions */}
+                    {roleHasPermission(userRole, 'transactions.edit') && onEditTransaction && (
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1066,7 +1120,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                       </button>
                     )}
 
-                    {userRole === 'archivist' && onDeleteTransaction && (
+                    {roleHasPermission(userRole, 'transactions.delete') && onDeleteTransaction && (
                       <button
                         type="button"
                         onClick={(e) => {
@@ -1207,6 +1261,14 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                               {tr.priority}
                             </span>
                           )}
+                          {tr.visibility && ACCESS_SCOPE_OPTIONS[tr.visibility] && (
+                            <span
+                              className={`text-[9px] font-bold px-1.5 py-0.2 rounded border ${ACCESS_SCOPE_OPTIONS[tr.visibility].badgeColor}`}
+                              title={ACCESS_SCOPE_OPTIONS[tr.visibility].description}
+                            >
+                              {ACCESS_SCOPE_OPTIONS[tr.visibility].label}
+                            </span>
+                          )}
                         </div>
                         <div className="text-stone-400 dark:text-stone-500 text-[11px] mt-0.5">
                           {tr.date}
@@ -1323,27 +1385,39 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                         className="py-3.5 px-4 text-center whitespace-nowrap"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <select
-                          value={tr.status}
-                          onChange={(e) => onUpdateStatus(tr.id, e.target.value as TransactionStatus)}
-                          className={`text-xs font-semibold px-2.5 py-1 rounded-full border outline-hidden transition-colors cursor-pointer ${
+                        {roleHasPermission(userRole, 'transactions.edit') ? (
+                          <select
+                            value={tr.status}
+                            onChange={(e) => onUpdateStatus(tr.id, e.target.value as TransactionStatus)}
+                            className={`text-xs font-semibold px-2.5 py-1 rounded-full border outline-hidden transition-colors cursor-pointer ${
+                              tr.status === 'جديد'
+                                ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
+                                : tr.status === 'قيد الإنجاز'
+                                ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                                : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                            }`}
+                          >
+                            <option value="جديد">جديد</option>
+                            <option value="قيد الإنجاز">قيد الإنجاز</option>
+                            <option value="مكتمل">مكتمل</option>
+                          </select>
+                        ) : (
+                          <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
                             tr.status === 'جديد'
                               ? 'bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800'
                               : tr.status === 'قيد الإنجاز'
                               ? 'bg-amber-50 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800'
                               : 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                          }`}
-                        >
-                          <option value="جديد">جديد</option>
-                          <option value="قيد الإنجاز">قيد الإنجاز</option>
-                          <option value="مكتمل">مكتمل</option>
-                        </select>
+                          }`}>
+                            {tr.status}
+                          </span>
+                        )}
                       </td>
 
                       {/* Action */}
                       <td className="py-3.5 px-4 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center gap-1.5">
-                          {userRole === 'archivist' && onEditTransaction && (
+                          {roleHasPermission(userRole, 'transactions.edit') && onEditTransaction && (
                             <button
                               type="button"
                               onClick={(e) => {
@@ -1358,7 +1432,7 @@ export const TransactionsList: React.FC<TransactionsListProps> = ({
                             </button>
                           )}
 
-                          {userRole === 'archivist' && onDeleteTransaction && (
+                          {roleHasPermission(userRole, 'transactions.delete') && onDeleteTransaction && (
                             <button
                               type="button"
                               onClick={(e) => {

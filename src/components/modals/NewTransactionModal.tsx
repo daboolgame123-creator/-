@@ -13,7 +13,10 @@ import {
   Users, 
   Briefcase, 
   FileText,
-  AlertCircle
+  AlertCircle,
+  ShieldCheck,
+  Globe,
+  Lock
 } from 'lucide-react';
 import { 
   Transaction, 
@@ -24,7 +27,9 @@ import {
   Attachment, 
   AttachmentType,
   DailySituationData,
-  DailySituationEntry 
+  DailySituationEntry,
+  AccessScope,
+  ACCESS_SCOPE_OPTIONS
 } from '../../types';
 import { processUploadedFile } from '../../utils/attachmentUtils';
 
@@ -67,6 +72,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
   const [priority, setPriority] = useState<TransactionPriority>('عادي');
   const [status, setStatus] = useState<TransactionStatus>('جديد');
   const [notes, setNotes] = useState('');
+  const [visibility, setVisibility] = useState<AccessScope>('Administrative');
 
   // Daily Situation State (6 Categorized Tables matching 9.jpg)
   const [situationDate, setSituationDate] = useState(today);
@@ -321,6 +327,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
         attachments,
         isDailySituation: true,
         dailySituationData: dailyData,
+        visibility: 'Administrative',
       };
 
       onAddTransaction(newDailyTr);
@@ -351,6 +358,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
       entity: entity.trim() || 'عام / غير محدد',
       subject: subject.trim() || 'بدون موضوع',
       employeeName: assignedEmployee || undefined,
+      visibility,
       priority,
       status,
       isRead: false,
@@ -886,6 +894,42 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
                     <option value="مكتمل">مكتمل</option>
                   </select>
                 </div>
+              </div>
+
+              {/* Row 5: Access Scope (نطاق الخصوصية وصلاحيات الرؤية) */}
+              <div className="p-3 bg-stone-50 dark:bg-stone-800/60 rounded-xl border border-stone-200 dark:border-stone-700">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4 text-amber-500" />
+                    <span>نطاق الخصوصية والاطلاع (Access Scope):</span>
+                  </label>
+                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${ACCESS_SCOPE_OPTIONS[visibility]?.badgeColor || ''}`}>
+                    {ACCESS_SCOPE_OPTIONS[visibility]?.label}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {(Object.keys(ACCESS_SCOPE_OPTIONS) as AccessScope[]).map((scopeKey) => {
+                    const opt = ACCESS_SCOPE_OPTIONS[scopeKey];
+                    const isSelected = visibility === scopeKey;
+                    return (
+                      <button
+                        key={scopeKey}
+                        type="button"
+                        onClick={() => setVisibility(scopeKey)}
+                        className={`p-2 rounded-lg text-xs font-medium border text-center transition-all cursor-pointer ${
+                          isSelected
+                            ? 'border-amber-500 bg-amber-50 dark:bg-amber-950/50 text-amber-900 dark:text-amber-300 font-bold ring-1 ring-amber-400'
+                            : 'border-stone-200 dark:border-stone-700 hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-2 leading-relaxed">
+                  {ACCESS_SCOPE_OPTIONS[visibility]?.description}
+                </p>
               </div>
             </div>
           )}
