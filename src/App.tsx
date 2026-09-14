@@ -14,11 +14,10 @@ import {
   ArchivistEditorModal 
 } from './components/modals';
 import { INITIAL_TRANSACTIONS, INITIAL_EMPLOYEES } from './data/mockData';
-import { Transaction, TransactionStatus, Employee, UserRole, Attachment, NavigationTarget, AccessScope, User } from './types';
+import { Transaction, TransactionStatus, Employee, UserRole, Attachment, NavigationTarget, User } from './types';
 import { StorageService, AuthService } from './services';
-import { canUserAccessTransaction } from './core/models';
 import { splitEmployeeNames, isEntityOrDepartmentName, determineEmployeeCategory, isEmployeeMatch } from './utils/employeeUtils';
-import { ShieldCheck, Info, Bell, CheckCheck, UserCheck, Eye, Check, Edit3 } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 
 const DARK_MODE_STORAGE_KEY = 'zatiya_prototype_dark_mode_v1';
 
@@ -114,16 +113,6 @@ export default function App() {
       // ignore
     }
   }, []);
-
-  // Sync to local storage for local persistence
-  useEffect(() => {
-    StorageService.saveTransactions(transactions);
-  }, [transactions]);
-
-  // Sync employees to local storage
-  useEffect(() => {
-    StorageService.saveEmployees(employees);
-  }, [employees]);
 
   // Helper to ensure any employee mentioned in a transaction exists in the employees registry as separate individuals
   const registerEmployeeIfNew = (

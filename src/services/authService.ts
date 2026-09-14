@@ -1,5 +1,5 @@
-import { User, RoleId, Permission, userHasPermission, roleHasPermission } from '../core/models/user';
-import { AccessScope, canUserAccessTransaction } from '../core/models/accessScope';
+import { User, RoleId, Permission, userHasPermission } from '../core/models/user';
+import { canUserAccessTransaction } from '../core/models/accessScope';
 import { Transaction } from '../core/models/transaction';
 import { Employee } from '../core/models/employee';
 import { splitEmployeeNames, isEmployeeMatch } from '../utils/employeeUtils';
