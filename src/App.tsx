@@ -174,37 +174,42 @@ export default function App() {
       prev.map((emp) => (emp.id === updatedEmp.id ? updatedEmp : emp))
     );
     if (oldName && oldName.trim() !== updatedEmp.name.trim()) {
-      // Sync any transactions that referenced the old name to the new updated name
-      setTransactions((prev) =>
-        prev.map((t) =>
-          t.employeeName?.trim() === oldName.trim()
-            ? { ...t, employeeName: updatedEmp.name.trim() }
-            : t
-        )
-      );
-    }
-  };
-
-  // Delete employee from registry and unlink name if referenced
-  const handleDeleteEmployee = (empId: string) => {
-    const target = employees.find((e) => e.id === empId);
-    setEmployees((prev) => prev.filter((emp) => emp.id !== empId));
-    if (target) {
+      // Sync any transactions that referenced the old name or have the employee ID
       setTransactions((prev) =>
         prev.map((t) => {
-          if (t.employeeName && isEmployeeMatch(t.employeeName, target.name)) {
-            const remaining = splitEmployeeNames(t.employeeName).filter(
-              (n) => !isEmployeeMatch(n, target.name)
-            );
-            return {
-              ...t,
-              employeeName: remaining.length > 0 ? remaining.join(' ، ') : undefined,
-            };
+          const hasIdMatch = t.employeeIds?.includes(updatedEmp.id);
+          const hasNameMatch = t.employeeName?.trim() === oldName.trim();
+          if (hasIdMatch || hasNameMatch) {
+            return { ...t, employeeName: updatedEmp.name.trim() };
           }
           return t;
         })
       );
     }
+  };
+
+  // Delete employee from registry and unlink from transactions
+  const handleDeleteEmployee = (empId: string) => {
+    const target = employees.find((e) => e.id === empId);
+    setEmployees((prev) => prev.filter((emp) => emp.id !== empId));
+    setTransactions((prev) =>
+      prev.map((t) => {
+        const hasIdMatch = t.employeeIds?.includes(empId);
+        const hasNameMatch = Boolean(target && t.employeeName && isEmployeeMatch(t.employeeName, target.name));
+        if (hasIdMatch || hasNameMatch) {
+          const newIds = t.employeeIds ? t.employeeIds.filter((id) => id !== empId) : undefined;
+          const remainingNames = target && t.employeeName
+            ? splitEmployeeNames(t.employeeName).filter((n) => !isEmployeeMatch(n, target.name))
+            : [];
+          return {
+            ...t,
+            employeeIds: newIds && newIds.length > 0 ? newIds : undefined,
+            employeeName: remainingNames.length > 0 ? remainingNames.join(' ، ') : undefined,
+          };
+        }
+        return t;
+      })
+    );
   };
 
   // Unread count
@@ -331,25 +336,27 @@ export default function App() {
 
   // Add new transaction (by archivist)
   const handleAddTransaction = (newTr: Transaction) => {
-    setTransactions((prev) => [newTr, ...prev]);
-    if (newTr.employeeName) {
-      registerEmployeeIfNew(newTr.employeeName, newTr.entity, newTr.date, newTr.category);
+    const normalized = AuthService.normalizeTransaction(newTr, employees);
+    setTransactions((prev) => [normalized, ...prev]);
+    if (normalized.employeeName) {
+      registerEmployeeIfNew(normalized.employeeName, normalized.entity, normalized.date, normalized.category);
     }
   };
 
   // Save entire transaction updates (fields, attachments, edits)
   const handleSaveTransaction = (updatedTr: Transaction) => {
+    const normalized = AuthService.normalizeTransaction(updatedTr, employees);
     setTransactions((prev) =>
-      prev.map((item) => (item.id === updatedTr.id ? updatedTr : item))
+      prev.map((item) => (item.id === normalized.id ? normalized : item))
     );
-    if (updatedTr.employeeName) {
-      registerEmployeeIfNew(updatedTr.employeeName, updatedTr.entity, updatedTr.date, updatedTr.category);
+    if (normalized.employeeName) {
+      registerEmployeeIfNew(normalized.employeeName, normalized.entity, normalized.date, normalized.category);
     }
-    if (selectedTransaction && selectedTransaction.id === updatedTr.id) {
-      setSelectedTransaction(updatedTr);
+    if (selectedTransaction && selectedTransaction.id === normalized.id) {
+      setSelectedTransaction(normalized);
     }
-    if (editingTransaction && editingTransaction.id === updatedTr.id) {
-      setEditingTransaction(updatedTr);
+    if (editingTransaction && editingTransaction.id === normalized.id) {
+      setEditingTransaction(normalized);
     }
   };
 
@@ -548,6 +555,7 @@ export default function App() {
           onClose={() => setIsNewModalOpen(false)}
           onAddTransaction={handleAddTransaction}
           employees={employees.map((e) => e.name)}
+          allEmployees={employees}
           defaultMode={newModalDefaultMode}
         />
       )}

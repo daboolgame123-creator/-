@@ -1,8 +1,5 @@
 import { RoleId, Permission, roleHasPermission } from './permission';
 
-export type { RoleId, Permission };
-export { roleHasPermission };
-
 /**
  * نموذج المستخدم (User Model)
  * يمثل الحساب النشط في النظام، سواء كان مديراً أو مسؤول أرشيف أو منتسباً عادياً أو مسؤول نظام.

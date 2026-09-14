@@ -129,18 +129,28 @@ export const isEmployeeMatch = (nameA?: string, nameB?: string): boolean => {
 
 /**
  * Check if a transaction mentions or is linked to an employee
+ * Prioritizes employeeIds as the primary relation, falling back to name matching for legacy data
  */
-export const isEmployeeInTransaction = (tr: Transaction, empName: string): boolean => {
+export const isEmployeeInTransaction = (tr: Transaction, emp: Employee | string): boolean => {
+  if (!emp) return false;
+  const empId = typeof emp === 'object' ? emp.id : undefined;
+  const empName = typeof emp === 'object' ? emp.name : emp;
+
+  // 1. Primary Check: If employeeId is present in tr.employeeIds
+  if (empId && Array.isArray(tr.employeeIds) && tr.employeeIds.includes(empId)) {
+    return true;
+  }
+
   if (!empName) return false;
 
-  // 1. Check employeeName field (which may contain multiple names)
+  // 2. Check employeeName field (which may contain multiple names)
   if (tr.employeeName) {
     const names = splitEmployeeNames(tr.employeeName);
     if (names.some((n) => isEmployeeMatch(n, empName))) return true;
     if (isEmployeeMatch(tr.employeeName, empName)) return true;
   }
 
-  // 2. Check in dailySituationData entries
+  // 3. Check in dailySituationData entries
   if (tr.dailySituationData) {
     const d = tr.dailySituationData;
     const allEntries = [
@@ -156,7 +166,7 @@ export const isEmployeeInTransaction = (tr: Transaction, empName: string): boole
     }
   }
 
-  // 3. Check subject ONLY if tr.employeeName is empty or mentions the employee directly
+  // 4. Check subject ONLY if tr.employeeName is empty or mentions the employee directly
   if (!tr.employeeName && tr.subject) {
     const normSubject = normalizeArabicName(tr.subject);
     const normEmp = normalizeArabicName(empName);

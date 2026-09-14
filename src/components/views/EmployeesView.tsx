@@ -167,7 +167,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   // Find all transactions linked to this selected employee
   const linkedTransactions = useMemo(() => {
     if (!selectedEmployee) return [];
-    return transactions.filter((t) => isEmployeeInTransaction(t, selectedEmployee.name));
+    return transactions.filter((t) => isEmployeeInTransaction(t, selectedEmployee));
   }, [transactions, selectedEmployee]);
 
   // All transactions belonging to Personnel Department
@@ -287,16 +287,21 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
   };
 
   // Unlink transaction from employee dossier
-  const handleUnlinkTransaction = (tr: Transaction, empName: string, e: React.MouseEvent) => {
+  const handleUnlinkTransaction = (tr: Transaction, emp: Employee, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!onSaveTransaction || !tr.employeeName) return;
+    if (!onSaveTransaction) return;
 
-    const remaining = splitEmployeeNames(tr.employeeName).filter(
-      (n) => !isEmployeeMatch(n, empName)
-    );
+    // 1. Remove employee ID from primary relation employeeIds
+    const newEmployeeIds = tr.employeeIds ? tr.employeeIds.filter((id) => id !== emp.id) : undefined;
+
+    // 2. Remove employee name from employeeName string
+    const remaining = tr.employeeName
+      ? splitEmployeeNames(tr.employeeName).filter((n) => !isEmployeeMatch(n, emp.name))
+      : [];
 
     const updated: Transaction = {
       ...tr,
+      employeeIds: newEmployeeIds && newEmployeeIds.length > 0 ? newEmployeeIds : undefined,
       employeeName: remaining.length > 0 ? remaining.join(' ، ') : undefined,
     };
 
@@ -780,7 +785,7 @@ export const EmployeesView: React.FC<EmployeesViewProps> = ({
                               {/* Option to unlink this transaction from this employee */}
                               <button
                                 type="button"
-                                onClick={(e) => handleUnlinkTransaction(tr, selectedEmployee.name, e)}
+                                onClick={(e) => handleUnlinkTransaction(tr, selectedEmployee, e)}
                                 className="text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 text-[11px] font-semibold flex items-center gap-1 hover:underline cursor-pointer"
                                 title="فك ارتباط هذا الكتاب عن هذا الملف وإزالته من الإضبارة"
                               >

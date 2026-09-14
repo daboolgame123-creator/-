@@ -127,10 +127,10 @@ export const Header: React.FC<HeaderProps> = ({
                       ? 'bg-emerald-400 text-stone-950 font-bold shadow-xs'
                       : 'text-stone-400 hover:text-white'
                   }`}
-                  title="حساب منتسب (اختبار رؤية الكتب العامة والخاصة بالمنتسب فقط)"
+                  title="حساب منتسب (اختبار التحقق من رؤية الكتب العامة والخاصة بالمنتسب فقط)"
                 >
                   <Users className="w-3 h-3" />
-                  <span>منتسب (د. أمير إبراهيم)</span>
+                  <span>منتسب (تجريبي)</span>
                 </button>
 
                 <button

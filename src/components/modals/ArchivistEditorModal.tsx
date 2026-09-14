@@ -335,6 +335,16 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
   const handleSaveAll = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
 
+    let finalEmployeeName = employeeName.trim() || undefined;
+    if (!finalEmployeeName && employeeIds.length > 0) {
+      const derivedNames = employeeIds
+        .map((id) => normalizedEmployeesList.find((e) => e.id === id)?.name)
+        .filter(Boolean);
+      if (derivedNames.length > 0) {
+        finalEmployeeName = derivedNames.join(' ، ');
+      }
+    }
+
     const updatedTransaction: Transaction = {
       ...transaction,
       number: number.trim() || transaction.number || 'بدون عدد',
@@ -345,7 +355,7 @@ export const ArchivistEditorModal: React.FC<ArchivistEditorModalProps> = ({
       subType: subType.trim(),
       entity: entity.trim() || 'عام / غير محدد',
       subject: subject.trim() || 'بدون موضوع',
-      employeeName: employeeName.trim() || undefined,
+      employeeName: finalEmployeeName,
       employeeIds: employeeIds.length > 0 ? employeeIds : undefined,
       visibility,
       priority,

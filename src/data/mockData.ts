@@ -8,8 +8,8 @@ export const INITIAL_EMPLOYEES: Employee[] = [
   { id: 'emp-6', name: 'منتظر اياد مهدي عباس', title: 'ملاحظ إداري', department: 'مركز الدراسات الافريقية', category: 'منتسب', badgeNumber: 'EMP-4180', joinedDate: '2024-01-10' },
 
   // 2. قائمة الباحثين والأساتذة (الكادر البحثي والأكاديمي)
-  { id: 'emp-3', name: 'محمد باقر ناصر (اسم تجريبي)', title: 'باحث شؤون منتسبين', department: 'الذاتية والبحوث', category: 'باحث', academicDegree: 'ماجستير إدارة وبحوث', specialization: 'إدارة وتوثيق', badgeNumber: 'RES-5012', joinedDate: '2020-09-01', userId: 'usr-emp-3' },
-  { id: 'emp-5', name: 'أمير إبراهيم علي حسن', title: 'باحث في الدراسات الأفريقية', department: 'مركز الدراسات الافريقية', category: 'باحث', academicDegree: 'دكتوراه تاريخ ودراسات إقليمية', specialization: 'الدراسات الجيوسياسية والتاريخية', badgeNumber: 'RES-5055', joinedDate: '2019-02-14', userId: 'usr-emp-5' },
+  { id: 'emp-3', name: 'محمد باقر ناصر (اسم تجريبي)', title: 'باحث شؤون منتسبين', department: 'الذاتية والبحوث', category: 'باحث', academicDegree: 'ماجستير إدارة وبحوث', specialization: 'إدارة وتوثيق', badgeNumber: 'RES-5012', joinedDate: '2020-09-01' },
+  { id: 'emp-5', name: 'أمير إبراهيم علي حسن', title: 'باحث في الدراسات الأفريقية', department: 'مركز الدراسات الافريقية', category: 'باحث', academicDegree: 'دكتوراه تاريخ ودراسات إقليمية', specialization: 'الدراسات الجيوسياسية والتاريخية', badgeNumber: 'RES-5055', joinedDate: '2019-02-14' },
   { id: 'emp-7', name: 'شعبان ادم جلو', title: 'باحث ومترجم لغات أفريقية', department: 'مركز الدراسات الافريقية', category: 'باحث', academicDegree: 'ماجستير لغات ولغويات', specialization: 'اللغة السواحيلية والترجمة', badgeNumber: 'RES-6010', joinedDate: '2021-04-05' },
   { id: 'emp-8', name: 'أ.د. حسن هادي الموسوي', title: 'أستاذ باحث متمرس', department: 'قسم الأساتذة والبحوث', category: 'باحث', academicDegree: 'أستاذ دكتور (بروفيسور)', specialization: 'الفكر الإسلامي والدراسات الاستشراقية', badgeNumber: 'RES-7001', joinedDate: '2018-01-01' },
 ];

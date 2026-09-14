@@ -29,15 +29,18 @@ import {
   DailySituationData,
   DailySituationEntry,
   AccessScope,
-  ACCESS_SCOPE_OPTIONS
+  ACCESS_SCOPE_OPTIONS,
+  Employee
 } from '../../types';
 import { processUploadedFile } from '../../utils/attachmentUtils';
+import { isEmployeeMatch, splitEmployeeNames } from '../../utils/employeeUtils';
 
 interface NewTransactionModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAddTransaction: (transaction: Transaction) => void;
   employees: string[];
+  allEmployees?: Employee[];
   defaultMode?: 'normal' | 'daily-situation';
 }
 
@@ -46,6 +49,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
   onClose,
   onAddTransaction,
   employees,
+  allEmployees = [],
   defaultMode = 'normal',
 }) => {
   const today = new Date().toISOString().split('T')[0];
@@ -303,7 +307,18 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
         ...cleanTempShifts.map((e) => e.employeeName.trim()),
       ])).filter(Boolean);
 
-      const mainEmployeeName = allMentionedEmployees.length > 0 ? allMentionedEmployees[0] : 'كافة منتسبي المركز';
+      const mainEmployeeName = allMentionedEmployees.length > 0 ? allMentionedEmployees.join(' ، ') : 'كافة منتسبي المركز';
+
+      // Match employeeIds as the primary relation
+      const dailyEmployeeIds: string[] = [];
+      if (allEmployees && allEmployees.length > 0) {
+        for (const empName of allMentionedEmployees) {
+          const found = allEmployees.find((e) => isEmployeeMatch(e.name, empName));
+          if (found && !dailyEmployeeIds.includes(found.id)) {
+            dailyEmployeeIds.push(found.id);
+          }
+        }
+      }
 
       const fullCreatedAt = `${situationDate} (${formattedTime})`;
 
@@ -318,6 +333,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
         subType: 'موقف يومي',
         entity: departmentName.trim() || 'مركز الدراسات الافريقية',
         subject: `الموقف اليومي لمنتسبي ${departmentName.trim() || 'مركز الدراسات الافريقية'} بتاريخ ${situationDate}`,
+        employeeIds: dailyEmployeeIds.length > 0 ? dailyEmployeeIds : undefined,
         employeeName: mainEmployeeName,
         priority: 'عادي',
         status: 'مكتمل',
@@ -346,6 +362,18 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
       }
     }
 
+    // Match employeeIds as the primary relation
+    const matchedEmployeeIds: string[] = [];
+    if (assignedEmployee && allEmployees && allEmployees.length > 0) {
+      const names = splitEmployeeNames(assignedEmployee);
+      for (const name of names) {
+        const found = allEmployees.find((e) => isEmployeeMatch(e.name, name));
+        if (found && !matchedEmployeeIds.includes(found.id)) {
+          matchedEmployeeIds.push(found.id);
+        }
+      }
+    }
+
     const newTr: Transaction = {
       id: `tr-${Date.now()}`,
       number: number.trim() || `كتاب-${Math.floor(100 + Math.random() * 900)}`,
@@ -357,6 +385,7 @@ export const NewTransactionModal: React.FC<NewTransactionModalProps> = ({
       subType: subType.trim() || (category === 'منتسبين' ? 'إجازة / مباشرة' : 'كتاب رسمي'),
       entity: entity.trim() || 'عام / غير محدد',
       subject: subject.trim() || 'بدون موضوع',
+      employeeIds: matchedEmployeeIds.length > 0 ? matchedEmployeeIds : undefined,
       employeeName: assignedEmployee || undefined,
       visibility,
       priority,
